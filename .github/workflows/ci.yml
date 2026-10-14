@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only a newer push to the same pull request supersedes a run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check C++ formatting
+        run: |
+          tool_dir=$(mktemp -d "$RUNNER_TEMP/clang-format.XXXXXX")
+          wheel="$tool_dir/clang-format.whl"
+          # The clang-format project's Linux x86-64 build of 22.1.8; the wheel is a zip archive.
+          curl --fail --silent --show-error --location --retry 3 \
+            https://files.pythonhosted.org/packages/e5/88/b82c066fa807da4ca2518fecf79071361f6324b77375e5e92c059c0697fd/clang_format-22.1.8-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl \
+            --output "$wheel"
+          printf 'b00cff6bfd1f1686f073a4fdf1cb937dbd58bf7510c659477805c03afdea0816  %s\n' "$wheel" | sha256sum --check --strict
+          unzip -q -j "$wheel" clang_format/data/bin/clang-format -d "$tool_dir"
+          git ls-files -z -- '*.cpp' '*.hpp' ':(exclude)third_party' |
+            xargs -0 "$tool_dir/clang-format" --dry-run --Werror
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: "Linux (GCC, Release)", os: ubuntu-24.04, preset: release, compiler: g++}
+          - {name: "Linux (Clang, sanitizers)", os: ubuntu-24.04, preset: sanitizers, compiler: clang++}
+          - {name: "Windows (MSVC, Release)", os: windows-2022, preset: release, compiler: cl}
+          - {name: "macOS (Apple Clang, Release)", os: macos-15, preset: release, compiler: c++}
+    env:
+      CXX: ${{ matrix.compiler }}
+      PRESET: ${{ matrix.preset }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize native Windows compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $before = @{}
+          Get-ChildItem Env: | ForEach-Object { $before[$_.Name] = $_.Value }
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$installation) { throw "Visual Studio C++ tools not found" }
+          & "$installation/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          Get-ChildItem Env: | Where-Object { $before[$_.Name] -ne $_.Value } | ForEach-Object {
+            "$($_.Name)=$($_.Value)" >> $env:GITHUB_ENV
+          }
+          ninja --version
+      - name: Install Ninja on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build
+      - name: Install Ninja on macOS
+        if: runner.os == 'macOS'
+        run: brew install ninja
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      - name: Build and test
+        run: cmake --workflow --preset "$PRESET"

@@ -1,0 +1,25 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {"major": 3, "minor": 25, "patch": 0},
+  "configurePresets": [
+    {"name": "base", "hidden": true, "generator": "Ninja", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "CMAKE_EXPORT_COMPILE_COMMANDS": true, "LINEA_BUILD_TESTS": true}},
+    {"name": "debug", "displayName": "Debug build and tests", "inherits": "base", "binaryDir": "${sourceDir}/build/debug"},
+    {"name": "release", "displayName": "Optimized build and tests", "inherits": "base", "binaryDir": "${sourceDir}/build/release", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}},
+    {"name": "sanitizers", "displayName": "Tests under AddressSanitizer and UndefinedBehaviorSanitizer", "inherits": "base", "binaryDir": "${sourceDir}/build/sanitizers", "cacheVariables": {"CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer", "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"}}
+  ],
+  "buildPresets": [
+    {"name": "debug", "configurePreset": "debug"},
+    {"name": "release", "configurePreset": "release"},
+    {"name": "sanitizers", "configurePreset": "sanitizers"}
+  ],
+  "testPresets": [
+    {"name": "debug", "configurePreset": "debug", "output": {"outputOnFailure": true}},
+    {"name": "release", "configurePreset": "release", "output": {"outputOnFailure": true}},
+    {"name": "sanitizers", "configurePreset": "sanitizers", "output": {"outputOnFailure": true}}
+  ],
+  "workflowPresets": [
+    {"name": "debug", "steps": [{"type": "configure", "name": "debug"}, {"type": "build", "name": "debug"}, {"type": "test", "name": "debug"}]},
+    {"name": "release", "steps": [{"type": "configure", "name": "release"}, {"type": "build", "name": "release"}, {"type": "test", "name": "release"}]},
+    {"name": "sanitizers", "steps": [{"type": "configure", "name": "sanitizers"}, {"type": "build", "name": "sanitizers"}, {"type": "test", "name": "sanitizers"}]}
+  ]
+}
