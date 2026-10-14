@@ -18,6 +18,7 @@ constexpr Color red{255, 0, 0, 255};
 constexpr Color white{255, 255, 255, 255};
 constexpr Color black{0, 0, 0, 255};
 constexpr Color blue{0, 0, 255, 255};
+constexpr Color clear{0, 0, 0, 0};
 
 } // namespace
 
@@ -28,6 +29,15 @@ TEST_CASE("A solid fill paints its pixels and leaves the rest transparent") {
     const std::uint8_t *inside = pixel(image, 3, 3);
     CHECK((inside[0] == 255 && inside[1] == 0 && inside[2] == 0 && inside[3] == 255));
     CHECK(pixel(image, 8, 8)[3] == 0);
+}
+
+TEST_CASE("A shape leaves every pixel outside it untouched, even where the image is transparent") {
+    // Were rounding in the circle's slanted edges to leave the rest of its rows a sliver of coverage, those pixels
+    // would keep alpha 0 but take the circle's color.
+    const Image image = render({48.0, 16.0, {filled(circle({8.0, 8.0}, 6.3), red)}}, 48, 16);
+    for (int y = 0; y < 16; ++y)
+        for (int x = 15; x < 48; ++x)
+            CHECK(colorAt(image, x, y) == clear);
 }
 
 TEST_CASE("The drawing scales to the image, and layers move by their transforms") {

@@ -261,6 +261,21 @@ TEST_CASE("A group's blur and shadow apply to its children's image as a whole") 
     CHECK(pixel(grouped, 33, 33)[2] > pixel(grouped, 33, 33)[0]);
 }
 
+TEST_CASE("A node on a group's own surface reaches as far as its own blur and shadow carry it") {
+    // A clip around the whole image puts the group on a surface of its own and leaves every pixel as it is, so the
+    // group draws exactly what its blurred, shadowed square draws alone: its surface reaches the square's shadow, cast
+    // far from the square, and its blurred edges, through the plain group between them.
+    Layer square = filled(rectangle({4.0, 4.0}, {10.0, 10.0}), red);
+    square.blur = 1.0;
+    square.shadow = DropShadow{.offset = {14.0, 6.0}, .deviation = 1.0, .color = blue};
+    const Group clipped{.children = {Group{.children = {square}}}, .clip = Clip{rectangle({0.0, 0.0}, {32.0, 24.0})}};
+    const Image alone = render({32.0, 24.0, {square}}, 32, 24);
+    CHECK(render({32.0, 24.0, {clipped}}, 32, 24).rgba == alone.rgba);
+    // The match is of the square over its shadow: the shadow, blurred twice, shows nearly opaque at its center.
+    CHECK(pixel(alone, 21, 13)[2] == 255);
+    CHECK(pixel(alone, 21, 13)[3] > 200);
+}
+
 TEST_CASE("A drop shadow's edge falls with its standard deviation, centered at its offset") {
     // Content over the image left of pixel 32, at 4 pixels a unit, casts a shadow 5 units right with a deviation of 1
     // unit: an edge centered at pixel 52 that falls with a deviation of 4 pixels. The opaque content covers the rest
