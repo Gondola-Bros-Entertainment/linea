@@ -19,6 +19,7 @@
 #include <concepts>
 #include <cstddef>
 #include <iterator>
+#include <optional>
 #include <utility>
 
 namespace linea {
@@ -28,6 +29,8 @@ constexpr double byteMax = 255.0;
 // A Gaussian kernel reaches this many standard deviations each way, where it has fallen to 1.1% of its peak and holds
 // 99.7% of its weight.
 constexpr double kernelDeviations = 3.0;
+// How many passes of a box stand in for a Gaussian: three, as SVG's feGaussianBlur takes and browsers draw it.
+constexpr int boxPasses = 3;
 // CSS Masking's luminance coefficients for linear RGB, those of feColorMatrix's luminanceToAlpha.
 constexpr double redLuminance = 0.2125;
 constexpr double greenLuminance = 0.7154;
@@ -138,14 +141,62 @@ Kernel unchanged() { return {0, {1.0}}; }
 int reachBefore(const Kernel &kernel) { return std::max(0, -kernel.first); }
 int reachAfter(const Kernel &kernel) { return std::max(0, kernel.first + static_cast<int>(kernel.weights.size()) - 1); }
 
-// A Gaussian of standard deviation @p deviation pixels, at most a third of effectReach, sampled at whole pixels out to
-// kernelDeviations each way and scaled to sum to 1, so that convolving with it keeps total alpha. A deviation that is
-// not positive gives the kernel that changes nothing.
-Kernel gaussian(double deviation) {
+// An extended box (Gwosdek, Grewenig, Bruhn and Weickert, 2011): the mean of the 2 radius + 1 pixels centered on the
+// one it writes and of a fraction of the pixel beyond each end, as if the box reached that much of a pixel farther. The
+// fraction lets the box's variance take any value, where whole widths give it only in steps.
+struct Box {
+    int radius{};
+    double fraction{};
+};
+
+// How a blur or a shadow spreads a plane along one axis: through boxPasses passes of a box, for a Gaussian whose
+// deviation calls for them, then through a kernel, for a Gaussian sampled at whole pixels or a shadow's offset. Either
+// may be missing, and a spread with neither changes nothing.
+struct Spread {
+    std::optional<Box> box;
+    std::optional<Kernel> kernel;
+};
+
+// How many pixels before the one it writes @p spread reads, and how many after: each pass of the box reads its radius
+// and the pixel beyond.
+int reachBefore(const Spread &spread) {
+    return (spread.box ? boxPasses * (spread.box->radius + 1) : 0) + (spread.kernel ? reachBefore(*spread.kernel) : 0);
+}
+int reachAfter(const Spread &spread) {
+    return (spread.box ? boxPasses * (spread.box->radius + 1) : 0) + (spread.kernel ? reachAfter(*spread.kernel) : 0);
+}
+
+// The box whose boxPasses passes spread as a Gaussian of deviation @p sigma pixels does: variances add, so each pass
+// takes a share of sigma^2. A box of radius r and fraction a has variance (r (r + 1) (2 r + 1) / 3 + 2 a (r + 1)^2) /
+// (2 r + 1 + 2 a): r (r + 1) / 3 with a = 0, and (r + 1) (r + 2) / 3 with a = 1, which is the box of radius r + 1. So r
+// is the largest radius whose variance with a = 0 is within the share, and a gives the rest. The radius is at most what
+// keeps every pass within effectReach, with a at most 1 there.
+Box box(double sigma) {
+    const double share = sigma * sigma / boxPasses;
+    const double tripled = 3.0 * share;
+    int radius = static_cast<int>(std::floor((std::sqrt(1.0 + 4.0 * tripled) - 1.0) / 2.0));
+    // The square root rounds, which can leave the radius one off where r (r + 1) meets three times the share.
+    if ((radius + 1.0) * (radius + 2.0) <= tripled)
+        ++radius;
+    if (radius * (radius + 1.0) > tripled)
+        --radius;
+    constexpr int widest = effectReach / boxPasses - 1;
+    if (radius > widest)
+        return {widest, 1.0};
+    const double r = radius;
+    return {radius, (2.0 * r + 1.0) * (tripled - r * (r + 1.0)) / (6.0 * ((r + 1.0) * (r + 1.0) - share))};
+}
+
+// A Gaussian of standard deviation @p deviation pixels, at most a third of effectReach: boxPasses passes of a box from
+// boxBlurDeviation up, and below that the Gaussian sampled at whole pixels out to kernelDeviations each way and scaled
+// to sum to 1. Either keeps total alpha. A deviation that is not positive gives the spread that changes nothing.
+Spread gaussian(double deviation) {
     if (!(deviation > 0.0))
-        return unchanged();
+        return {};
     const double sigma = std::min(deviation, static_cast<double>(effectReach) / kernelDeviations);
-    const int radius = std::min(effectReach, static_cast<int>(std::ceil(kernelDeviations * sigma)));
+    if (sigma >= boxBlurDeviation)
+        return {box(sigma), std::nullopt};
+    const int radius = static_cast<int>(std::ceil(kernelDeviations * sigma));
     Kernel kernel{-radius, {}};
     double sum = 0.0;
     for (int i = -radius; i <= radius; ++i) {
@@ -155,7 +206,7 @@ Kernel gaussian(double deviation) {
     }
     for (double &weight : kernel.weights)
         weight /= sum;
-    return kernel;
+    return {std::nullopt, kernel};
 }
 
 // @p kernel moved @p shift pixels forward along its axis: its weights move by the whole pixels of @p shift, and each
@@ -172,6 +223,12 @@ Kernel shifted(const Kernel &kernel, double shift) {
     return moved;
 }
 
+// @p spread moved @p shift pixels forward: its kernel, or one that changes nothing, moved.
+Spread shifted(Spread spread, double shift) {
+    spread.kernel = shifted(spread.kernel.value_or(unchanged()), shift);
+    return spread;
+}
+
 void addScaled(Pixel &into, const Pixel &from, double weight) {
     into.r += from.r * weight;
     into.g += from.g * weight;
@@ -181,41 +238,138 @@ void addScaled(Pixel &into, const Pixel &from, double weight) {
 
 void addScaled(double &into, double from, double weight) { into += from * weight; }
 
-// @p plane, rows of @p width values, convolved along x with @p alongX and then along y with @p alongY. What would land
-// beyond the plane is lost.
-template <class Value> void convolve(std::vector<Value> &plane, int width, const Kernel &alongX, const Kernel &alongY) {
-    const auto columns = static_cast<std::ptrdiff_t>(width);
-    const std::ptrdiff_t rowCount = std::ssize(plane) / columns;
-    std::vector<Value> rows(plane.size());
+// @p in, rows of @p columns values, convolved along x with @p kernel into @p out. Only the taps that read within the
+// row count.
+template <class Value>
+void kernelAlongX(const std::vector<Value> &in, std::vector<Value> &out, std::ptrdiff_t columns, const Kernel &kernel) {
+    std::ranges::fill(out, Value{});
+    const std::ptrdiff_t rowCount = std::ssize(in) / columns;
     for (std::ptrdiff_t y = 0; y < rowCount; ++y) {
-        const Value *in = plane.data() + y * columns;
-        Value *out = rows.data() + y * columns;
+        const Value *row = in.data() + y * columns;
+        Value *written = out.data() + y * columns;
         for (std::ptrdiff_t x = 0; x < columns; ++x) {
-            // Only the taps that read within the row.
-            const std::ptrdiff_t start = x + alongX.first;
-            const std::ptrdiff_t to = std::min(std::ssize(alongX.weights), columns - start);
+            const std::ptrdiff_t start = x + kernel.first;
+            const std::ptrdiff_t to = std::min(std::ssize(kernel.weights), columns - start);
             for (std::ptrdiff_t k = std::max<std::ptrdiff_t>(0, -start); k < to; ++k)
-                addScaled(out[x], in[start + k], alongX.weights[static_cast<std::size_t>(k)]);
-        }
-    }
-    std::ranges::fill(plane, Value{});
-    for (std::ptrdiff_t y = 0; y < rowCount; ++y) {
-        Value *out = plane.data() + y * columns;
-        // Only the taps that read within the plane, each adding a whole row.
-        const std::ptrdiff_t start = y + alongY.first;
-        const std::ptrdiff_t to = std::min(std::ssize(alongY.weights), rowCount - start);
-        for (std::ptrdiff_t k = std::max<std::ptrdiff_t>(0, -start); k < to; ++k) {
-            const Value *in = rows.data() + (start + k) * columns;
-            const double weight = alongY.weights[static_cast<std::size_t>(k)];
-            for (std::ptrdiff_t x = 0; x < columns; ++x)
-                addScaled(out[x], in[x], weight);
+                addScaled(written[x], row[start + k], kernel.weights[static_cast<std::size_t>(k)]);
         }
     }
 }
 
-// Composites beneath what @p surface holds its own alpha, convolved with @p alongX and @p alongY and filled with
-// @p color: a drop shadow.
-void castShadow(Surface &surface, const Kernel &alongX, const Kernel &alongY, Color color) {
+// @p in, rows of @p columns values, convolved along y with @p kernel into @p out. Only the taps that read within the
+// plane count, each adding a whole row.
+template <class Value>
+void kernelAlongY(const std::vector<Value> &in, std::vector<Value> &out, std::ptrdiff_t columns, const Kernel &kernel) {
+    std::ranges::fill(out, Value{});
+    const std::ptrdiff_t rowCount = std::ssize(in) / columns;
+    for (std::ptrdiff_t y = 0; y < rowCount; ++y) {
+        Value *written = out.data() + y * columns;
+        const std::ptrdiff_t start = y + kernel.first;
+        const std::ptrdiff_t to = std::min(std::ssize(kernel.weights), rowCount - start);
+        for (std::ptrdiff_t k = std::max<std::ptrdiff_t>(0, -start); k < to; ++k) {
+            const Value *row = in.data() + (start + k) * columns;
+            const double weight = kernel.weights[static_cast<std::size_t>(k)];
+            for (std::ptrdiff_t x = 0; x < columns; ++x)
+                addScaled(written[x], row[x], weight);
+        }
+    }
+}
+
+// The factor that turns the sum a box weighs into its mean.
+double boxScale(const Box &box) { return 1.0 / (2.0 * box.radius + 1.0 + 2.0 * box.fraction); }
+
+// One value a box writes: @p scale times the sum of the whole pixels it covers, @p upTo less @p from, two prefix sums,
+// and of its fraction of @p before and @p after, the values beyond each end, each null past the end of the line. Values
+// are never negative, so a prefix sum never falls as it adds them, which makes the result at least 0, and exactly 0
+// where every value the box covers is 0; a running sum would drift by rounding instead.
+template <class Value>
+Value boxValue(const Value &upTo, const Value &from, const Value *before, const Value *after, const Box &box,
+               double scale) {
+    Value sum = upTo;
+    addScaled(sum, from, -1.0);
+    if (before)
+        addScaled(sum, *before, box.fraction);
+    if (after)
+        addScaled(sum, *after, box.fraction);
+    Value mean{};
+    addScaled(mean, sum, scale);
+    return mean;
+}
+
+// @p in, rows of @p columns values, boxed along x into @p out.
+template <class Value>
+void boxAlongX(const std::vector<Value> &in, std::vector<Value> &out, std::ptrdiff_t columns, const Box &box) {
+    const double scale = boxScale(box);
+    // prefix[x] holds the sum of the row's first x values.
+    std::vector<Value> prefix(static_cast<std::size_t>(columns) + 1);
+    for (std::ptrdiff_t y = 0; y < std::ssize(in) / columns; ++y) {
+        const Value *row = in.data() + y * columns;
+        for (std::ptrdiff_t x = 0; x < columns; ++x) {
+            prefix[static_cast<std::size_t>(x + 1)] = prefix[static_cast<std::size_t>(x)];
+            addScaled(prefix[static_cast<std::size_t>(x + 1)], row[x], 1.0);
+        }
+        for (std::ptrdiff_t x = 0; x < columns; ++x) {
+            const std::ptrdiff_t before = x - box.radius - 1;
+            const std::ptrdiff_t after = x + box.radius + 1;
+            out[static_cast<std::size_t>(y * columns + x)] =
+                boxValue(prefix[static_cast<std::size_t>(std::min(columns, after))],
+                         prefix[static_cast<std::size_t>(std::max<std::ptrdiff_t>(0, before + 1))],
+                         before >= 0 ? row + before : nullptr, after < columns ? row + after : nullptr, box, scale);
+        }
+    }
+}
+
+// @p in, rows of @p columns values, boxed along y into @p out, a row at a time so that memory is read in order.
+template <class Value>
+void boxAlongY(const std::vector<Value> &in, std::vector<Value> &out, std::ptrdiff_t columns, const Box &box) {
+    const double scale = boxScale(box);
+    const std::ptrdiff_t rowCount = std::ssize(in) / columns;
+    // Row y of prefix holds the sums of each column's first y values.
+    std::vector<Value> prefix(static_cast<std::size_t>((rowCount + 1) * columns));
+    for (std::ptrdiff_t i = 0; i < std::ssize(in); ++i) {
+        prefix[static_cast<std::size_t>(i + columns)] = prefix[static_cast<std::size_t>(i)];
+        addScaled(prefix[static_cast<std::size_t>(i + columns)], in[static_cast<std::size_t>(i)], 1.0);
+    }
+    for (std::ptrdiff_t y = 0; y < rowCount; ++y) {
+        const std::ptrdiff_t before = y - box.radius - 1;
+        const std::ptrdiff_t after = y + box.radius + 1;
+        const Value *upTo = prefix.data() + std::min(rowCount, after) * columns;
+        const Value *from = prefix.data() + std::max<std::ptrdiff_t>(0, before + 1) * columns;
+        const Value *above = before >= 0 ? in.data() + before * columns : nullptr;
+        const Value *below = after < rowCount ? in.data() + after * columns : nullptr;
+        for (std::ptrdiff_t x = 0; x < columns; ++x)
+            out[static_cast<std::size_t>(y * columns + x)] =
+                boxValue(upTo[x], from[x], above ? above + x : nullptr, below ? below + x : nullptr, box, scale);
+    }
+}
+
+// @p plane, rows of @p width values, spread along x by @p alongX and then along y by @p alongY. What would land beyond
+// the plane is lost.
+template <class Value> void convolve(std::vector<Value> &plane, int width, const Spread &alongX, const Spread &alongY) {
+    const auto columns = static_cast<std::ptrdiff_t>(width);
+    std::vector<Value> other(plane.size());
+    // Each step reads the plane and writes the other buffer, which then holds the plane.
+    const auto step = [&](const auto &apply) {
+        apply(std::as_const(plane), other);
+        std::swap(plane, other);
+    };
+    for (int pass = 0; alongX.box && pass < boxPasses; ++pass)
+        step([&](const std::vector<Value> &in, std::vector<Value> &out) { boxAlongX(in, out, columns, *alongX.box); });
+    if (alongX.kernel)
+        step([&](const std::vector<Value> &in, std::vector<Value> &out) {
+            kernelAlongX(in, out, columns, *alongX.kernel);
+        });
+    for (int pass = 0; alongY.box && pass < boxPasses; ++pass)
+        step([&](const std::vector<Value> &in, std::vector<Value> &out) { boxAlongY(in, out, columns, *alongY.box); });
+    if (alongY.kernel)
+        step([&](const std::vector<Value> &in, std::vector<Value> &out) {
+            kernelAlongY(in, out, columns, *alongY.kernel);
+        });
+}
+
+// Composites beneath what @p surface holds its own alpha, spread by @p alongX and @p alongY and filled with @p color:
+// a drop shadow.
+void castShadow(Surface &surface, const Spread &alongX, const Spread &alongY, Color color) {
     std::vector<double> shade(surface.pixels.size());
     std::ranges::transform(surface.pixels, shade.begin(), &Pixel::a);
     convolve(shade, surface.box.width(), alongX, alongY);
@@ -288,12 +442,12 @@ bool direct(const Group & /*group*/, const Effects &effects) { return !effects.a
 // blur and its shadow, and its own plane. That plane is the one beneath widened on each side as far as the kernels
 // read, at most effectReach, so that what lies just outside can blur or cast a shadow into view.
 struct Isolation {
-    Kernel blurX;
-    Kernel blurY;
+    Spread blurX;
+    Spread blurY;
     // The shadow, or null for none or for one that falls too far to show.
     const DropShadow *shadow{};
-    Kernel shadowX;
-    Kernel shadowY;
+    Spread shadowX;
+    Spread shadowY;
     // How far the node's plane reaches left of the one beneath and above it, and its size.
     int left{};
     int top{};
@@ -321,8 +475,10 @@ Isolation isolation(const Effects &effects, const Affine &toPixels, int width, i
     if (shadow && !(std::abs(offset.x) < width + 2.0 * effectReach && std::abs(offset.y) < height + 2.0 * effectReach))
         shadow = nullptr;
     plan.shadow = shadow;
-    plan.shadowX = shadow ? shifted(gaussian(shadow->deviation * stretchX), offset.x) : unchanged();
-    plan.shadowY = shadow ? shifted(gaussian(shadow->deviation * stretchY), offset.y) : unchanged();
+    if (shadow) {
+        plan.shadowX = shifted(gaussian(shadow->deviation * stretchX), offset.x);
+        plan.shadowY = shifted(gaussian(shadow->deviation * stretchY), offset.y);
+    }
 
     // The shadow reads the blurred image as far as its kernel reaches, and the blur reads the drawn one as far again.
     plan.left = std::min(effectReach, reachBefore(plan.blurX) + reachBefore(plan.shadowX));

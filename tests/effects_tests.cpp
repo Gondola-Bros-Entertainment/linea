@@ -23,9 +23,20 @@ constexpr Color blue{0, 0, 255, 255};
 constexpr Color clear{0, 0, 0, 0};
 constexpr double byteMax = 255.0;
 
-// A kernel reaches three standard deviations, so it holds 99.7% of the Gaussian and spreads 1.2% less widely than the
-// deviation asked for. Two percent allows that and the rounding of alpha to 255 levels.
+// A sampled kernel reaches three standard deviations, so it holds 99.7% of the Gaussian and spreads 1.2% less widely
+// than the deviation asked for, where box blurs spread exactly as widely. Two percent allows either and the rounding of
+// alpha to 255 levels.
 constexpr double deviationTolerance = 0.02;
+// Rounding alpha to 255 levels moves the measured spread of box blurs up to about 0.4% from the deviation asked for,
+// where the sampled kernel's falls at least 1% short.
+constexpr double boxDeviationTolerance = 0.006;
+// The sampled kernel reaches this many standard deviations each way.
+constexpr double kernelDeviations = 3.0;
+// How far box blurs stray from the sampled kernel across a straight edge at most, in levels of 255.
+constexpr double boxEdgeLevels = 2.7;
+// Rounding alpha to the nearest of 255 levels moves it half a level at most, and a hair more allows for the order in
+// which the renderer adds its terms.
+constexpr double roundingLevels = 0.5 + 1e-9;
 // Rounding alpha to 255 levels moves the centroid of an edge a few thousandths of a pixel.
 constexpr double centerTolerance = 0.02;
 
@@ -75,6 +86,28 @@ Spread fall(const std::vector<double> &alpha) {
         variance += (alpha[i - 1] - alpha[i]) * from * from;
     }
     return {center, std::sqrt(variance / weight)};
+}
+
+// The alpha that the Gaussian of @p deviation pixels, sampled at whole pixels out to kernelDeviations each way and
+// scaled to sum to 1, gives each of @p width pixels along a line that is opaque before pixel @p edge and clear from it
+// on.
+std::vector<double> sampledEdge(double deviation, int edge, int width) {
+    const int radius = static_cast<int>(std::ceil(kernelDeviations * deviation));
+    std::vector<double> weights;
+    double sum = 0.0;
+    for (int k = -radius; k <= radius; ++k) {
+        const double z = k / deviation;
+        weights.push_back(std::exp(-0.5 * z * z));
+        sum += weights.back();
+    }
+    std::vector<double> alpha;
+    for (int x = 0; x < width; ++x) {
+        double covered = 0.0;
+        for (int k = -radius; k <= radius && x + k < edge; ++k)
+            covered += weights[static_cast<std::size_t>(k + radius)];
+        alpha.push_back(covered / sum);
+    }
+    return alpha;
 }
 
 // Checks that @p spread is centered at @p center and spreads with @p deviation, within the tolerances above.
@@ -207,6 +240,31 @@ TEST_CASE("A blur keeps total alpha, and draws in what lies just outside the ima
     Layer cover = filled(rectangle({-10.0, -10.0}, {50.0, 50.0}), red);
     cover.blur = 2.0;
     CHECK(alphaLevels(render({40.0, 40.0, {cover}}, 40, 40)) == 40 * 40 * 255);
+    // Box blurs keep it too: from a deviation of 6 pixels, three boxes of radius 5 and a fraction reach 18 beyond the
+    // square's edges, 68 by 68 pixels.
+    Layer wide = filled(rectangle({30.0, 30.0}, {62.0, 62.0}), red);
+    wide.blur = 6.0;
+    CHECK(std::abs(alphaLevels(render({92.0, 92.0, {wide}}, 92, 92)) - 32 * 32 * 255) <= 68 * 68 / 2);
+}
+
+TEST_CASE(
+    "A blur is the sampled Gaussian below boxBlurDeviation, and box blurs from it stay close and spread exactly") {
+    // Opaque everywhere left of pixel 128 and far beyond every blur's reach above, below and to the left, so that each
+    // row crosses one straight edge.
+    for (const double deviation : {1.5, 3.5, boxBlurDeviation, 6.5, 13.0, 40.0}) {
+        Layer half = filled(rectangle({-300.0, -300.0}, {128.0, 556.0}), red);
+        half.blur = deviation;
+        const Image image = render({256.0, 256.0, {half}}, 256, 256);
+        const std::vector<double> expected = sampledEdge(deviation, 128, 256);
+        const bool boxed = deviation >= boxBlurDeviation;
+        const double levels = (boxed ? boxEdgeLevels : 0.0) + roundingLevels;
+        for (int x = 0; x < 256; ++x)
+            CHECK(std::abs(pixel(image, x, 128)[3] - expected[static_cast<std::size_t>(x)] * byteMax) <= levels);
+        const Spread measured = fall(rowAlpha(image, 128));
+        CHECK(std::abs(measured.center - 128.0) <= centerTolerance);
+        if (boxed)
+            CHECK(std::abs(measured.deviation - deviation) <= boxDeviationTolerance * deviation);
+    }
 }
 
 TEST_CASE("A blurred edge falls with the blur's standard deviation, carried into pixels by the transform") {
