@@ -30,6 +30,20 @@ linea::Image badge(int pixels) {
 The drawing is 100 by 100 units, and `render` draws it at whatever size it is asked for, so the same badge is sharp at
 32 pixels and at 1024.
 
+linea reads and writes no files. `encodePng` gives the bytes of a PNG file, to write wherever they belong:
+
+```cpp
+#include <linea/Png.hpp>
+
+#include <fstream>
+
+void save(const linea::Image &image, const char *path) {
+    const std::vector<std::uint8_t> png = linea::encodePng(image);
+    std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char *>(png.data()),
+                                                static_cast<std::streamsize>(png.size()));
+}
+```
+
 ## Modules
 
 | Header | Provides |
@@ -49,6 +63,7 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Drawing.hpp` | Layers of filled and stroked paths and groups of them, each with its own transform, opacity, clip path, Gaussian blur and drop shadow, groups with alpha or luminance masks, composited in linear light |
 | `Patterns.hpp` | Dot grids, line grids, crosshatching and checkerboards as ready-made patterns |
 | `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and kerning |
+| `Png.hpp` | Images as PNG files, compressed losslessly, with no dependency |
 | `Svg.hpp` | Drawings written as SVG documents that read back exactly, and SVG documents read as drawings, refusing what linea cannot draw as a browser would; SVG path data both ways |
 
 Coverage is the exact area of each pixel that a shape covers, so edges are smooth at every size without
