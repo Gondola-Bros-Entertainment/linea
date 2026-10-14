@@ -35,6 +35,7 @@ add_library(linea
     src/Paint.cpp
     src/Path.cpp
     src/Patterns.cpp
+    src/Png.cpp
     src/Raster.cpp
     src/Shading.cpp
     src/Shapes.cpp
@@ -68,6 +69,7 @@ if(LINEA_BUILD_TESTS)
         tests/paint_tests.cpp
         tests/path_tests.cpp
         tests/pattern_tests.cpp
+        tests/png_tests.cpp
         tests/raster_tests.cpp
         tests/stroke_tests.cpp
         tests/svg_tests.cpp
