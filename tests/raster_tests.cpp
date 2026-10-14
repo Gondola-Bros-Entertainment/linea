@@ -49,6 +49,24 @@ TEST_CASE("Shapes beyond the image keep exact coverage inside it and leak nowher
     CHECK(total(fill(rectangle({-50.0, -50.0}, {-10.0, -10.0}), 10, 10)) == 0.0);
 }
 
+TEST_CASE("A slanted edge that crosses the image's left or right side keeps its slope inside the image") {
+    // The triangle (5, 0), (15, 10), (5, 10) lies left of x = 5 + y, which leaves the image at (10, 5): of its area of
+    // 50, the corner from there to (15, 10) lies outside, 12.5, and pixel (7, 3) lies wholly inside.
+    const Vec2 rightward[] = {{5.0, 0.0}, {15.0, 10.0}, {5.0, 10.0}};
+    const std::vector<float> right = fill(polygon(rightward), 10, 10);
+    CHECK(total(right) == doctest::Approx(37.5).epsilon(1e-9));
+    CHECK(at(right, 10, 7, 3) == doctest::Approx(1.0));
+    // Its mirror image across x = 5 crosses the left side.
+    const Vec2 leftward[] = {{5.0, 0.0}, {5.0, 10.0}, {-5.0, 10.0}};
+    const std::vector<float> left = fill(polygon(leftward), 10, 10);
+    CHECK(total(left) == doctest::Approx(37.5).epsilon(1e-9));
+    CHECK(at(left, 10, 2, 3) == doctest::Approx(1.0));
+    // An edge from (20, 0) to (-10, 10), y = (20 - x) / 3, crosses both sides. Pixel (5, 4) lies under it between
+    // x = 5, where it is at y = 5, and x = 6, where it is at 14 / 3: an area of 5 / 6.
+    const Vec2 across[] = {{-10.0, 0.0}, {20.0, 0.0}, {-10.0, 10.0}};
+    CHECK(at(fill(polygon(across), 10, 10), 10, 5, 4) == doctest::Approx(5.0 / 6.0));
+}
+
 TEST_CASE("The fill rules differ where contours wind around a point more than once") {
     // A pentagram drawn in one stroke winds twice around its center.
     std::vector<Vec2> points;

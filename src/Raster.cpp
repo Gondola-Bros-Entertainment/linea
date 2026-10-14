@@ -4,6 +4,7 @@
 #include "linea/Raster.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <utility>
@@ -18,34 +19,23 @@ class Accumulator {
           cells_(stride_ * static_cast<std::size_t>(height), 0.0) {}
 
     void edge(Vec2 p0, Vec2 p1) {
-        // An edge left of the image covers it from its left side, and one right of it covers nothing that shows, so
-        // clamping x keeps every visible pixel's coverage exact. Rows carry padding cells for edges at the right
-        // border, so nothing spills into the next row.
-        const double right = width_;
-        p0.x = std::clamp(p0.x, 0.0, right);
-        p1.x = std::clamp(p1.x, 0.0, right);
-        if (p0.y == p1.y)
-            return;
-        double direction = 1.0;
-        if (p0.y > p1.y) {
-            std::swap(p0, p1);
-            direction = -1.0;
+        // An edge, or the part of one, left of the image covers every pixel of its rows from the image's left side, as
+        // the running sum carries it rightward, and one right of the image covers nothing that shows, so moving each
+        // part outside onto the side it lies beyond keeps every visible pixel's coverage exact. An edge that crosses a
+        // side is cut there first, so that the part inside keeps its slope.
+        Vec2 from = p0;
+        if (p0.x != p1.x) {
+            std::array<double, 2> cuts{-p0.x / (p1.x - p0.x), (width_ - p0.x) / (p1.x - p0.x)};
+            std::ranges::sort(cuts);
+            for (const double t : cuts) {
+                if (t > 0.0 && t < 1.0) {
+                    const Vec2 to = lerp(p0, p1, t);
+                    clamped(from, to);
+                    from = to;
+                }
+            }
         }
-        if (p1.y <= 0.0 || p0.y >= height_)
-            return;
-        const double dxdy = (p1.x - p0.x) / (p1.y - p0.y);
-        double x = p0.x;
-        if (p0.y < 0.0)
-            x -= p0.y * dxdy;
-        const int firstRow = static_cast<int>(std::floor(std::max(p0.y, 0.0)));
-        const int endRow = std::min(height_, static_cast<int>(std::ceil(p1.y)));
-        for (int y = firstRow; y < endRow; ++y) {
-            const double dy = std::min(static_cast<double>(y + 1), p1.y) - std::max(static_cast<double>(y), p0.y);
-            const double next = std::clamp(x + dxdy * dy, 0.0, right);
-            x = std::clamp(x, 0.0, right);
-            sweep(y, x, next, dy * direction);
-            x = next;
-        }
+        clamped(from, p1);
     }
 
     // The coverage of every pixel under @p rule.
@@ -74,6 +64,36 @@ class Accumulator {
   private:
     // Cells beyond the last column: an edge on the right border writes up to two cells past it.
     static constexpr std::size_t padding = 2;
+
+    // The edge from @p p0 to @p p1 with x clamped to the image, which moves it onto the side it lies beyond when it
+    // lies wholly outside. Rows carry padding cells for edges on the right side, so nothing spills into the next row.
+    void clamped(Vec2 p0, Vec2 p1) {
+        const double right = width_;
+        p0.x = std::clamp(p0.x, 0.0, right);
+        p1.x = std::clamp(p1.x, 0.0, right);
+        if (p0.y == p1.y)
+            return;
+        double direction = 1.0;
+        if (p0.y > p1.y) {
+            std::swap(p0, p1);
+            direction = -1.0;
+        }
+        if (p1.y <= 0.0 || p0.y >= height_)
+            return;
+        const double dxdy = (p1.x - p0.x) / (p1.y - p0.y);
+        double x = p0.x;
+        if (p0.y < 0.0)
+            x -= p0.y * dxdy;
+        const int firstRow = static_cast<int>(std::floor(std::max(p0.y, 0.0)));
+        const int endRow = std::min(height_, static_cast<int>(std::ceil(p1.y)));
+        for (int y = firstRow; y < endRow; ++y) {
+            const double dy = std::min(static_cast<double>(y + 1), p1.y) - std::max(static_cast<double>(y), p0.y);
+            const double next = std::clamp(x + dxdy * dy, 0.0, right);
+            x = std::clamp(x, 0.0, right);
+            sweep(y, x, next, dy * direction);
+            x = next;
+        }
+    }
 
     // The part of an edge within row @p y, from x @p from to x @p to, both inside the image, sweeping @p dy signed.
     void sweep(int y, double from, double to, double dy) {
