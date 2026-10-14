@@ -1,19 +1,12 @@
 // linea - shading paints at points, for the renderer. Internal.
 #pragma once
 
+#include "ColorSpace.hpp"
 #include "linea/Paint.hpp"
 
 #include <vector>
 
 namespace linea::detail {
-
-// A color in linear light with straight alpha, each from 0 to 1.
-struct LinearColor {
-    double r{};
-    double g{};
-    double b{};
-    double a{};
-};
 
 // A paint ready to sample: gradient stops sorted and converted to premultiplied Oklab once.
 class Shader {
