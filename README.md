@@ -38,7 +38,8 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Path.hpp` | Paths of lines, quadratic and cubic Bézier curves and elliptical arcs, with SVG's arc semantics; reversing them, and their control-point and tight bounds |
 | `Shapes.hpp` | Circles, ellipses, rectangles, rounded rectangles, polygons, stars and rings as paths |
 | `Flatten.hpp` | Bézier evaluation and splitting, flattening paths into polylines within a tolerance, and simplifying polylines with Ramer-Douglas-Peucker |
-| `Stroke.hpp` | Stroke outlines with miter, round and bevel joins and butt, round and square caps |
+| `Measure.hpp` | Arc length by adaptive Gauss-Legendre quadrature, the point and tangent at a distance along a path, and splitting a path there |
+| `Stroke.hpp` | Stroke outlines with miter, round and bevel joins, butt, round and square caps, and SVG's dash patterns |
 | `Raster.hpp` | Exact-area anti-aliased coverage under the nonzero and even-odd fill rules |
 | `Color.hpp` | Colors from hex, HSL, Oklab, Oklch and the 148 CSS names, and lighten, darken, saturate, desaturate and mix in Oklab |
 | `Paint.hpp` | Solid colors, and linear and radial gradients that blend in Oklab |

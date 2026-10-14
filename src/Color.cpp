@@ -3,6 +3,7 @@
 #include "linea/Color.hpp"
 
 #include "ColorSpace.hpp"
+#include "Roots.hpp"
 
 #include <algorithm>
 #include <array>
@@ -112,27 +113,6 @@ bool fits(const Channels &channels) {
     return std::ranges::all_of(channels, [](double linear) { return placement(linear) == 0; });
 }
 
-// Appends to @p shares the roots strictly between 0 and 1 of c2 s^2 + c1 s + c0.
-void appendRoots(double c2, double c1, double c0, std::vector<double> &shares) {
-    const auto append = [&](double root) {
-        if (root > 0.0 && root < 1.0)
-            shares.push_back(root);
-    };
-    if (c2 == 0.0) {
-        if (c1 != 0.0)
-            append(-c0 / c1);
-        return;
-    }
-    const double discriminant = c1 * c1 - 4.0 * c2 * c0;
-    if (discriminant < 0.0)
-        return;
-    // This form never subtracts nearly equal numbers, so neither root loses precision.
-    const double q = -0.5 * (c1 + std::copysign(std::sqrt(discriminant), c1));
-    append(q / c2);
-    if (q != 0.0)
-        append(c0 / q);
-}
-
 // The share between @p on, where @p off is false, and @p past, where it is true, at which @p off turns true, taken
 // from the @p on side.
 double boundary(const auto &off, double on, double past) {
@@ -196,7 +176,7 @@ double fittingShare(double l, double a, double b) {
             c1 += 2.0 * weights[i] * slope[i] * slope[i] * base[i];
             c0 += weights[i] * slope[i] * base[i] * base[i];
         }
-        appendRoots(c2, c1, c0, breaks);
+        detail::forEachUnitRoot(c2, c1, c0, [&](double share) { breaks.push_back(share); });
     }
     std::ranges::sort(breaks, std::ranges::greater{});
     for (std::size_t i = 1; i < breaks.size(); ++i)
