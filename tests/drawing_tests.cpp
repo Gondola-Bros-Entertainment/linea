@@ -5,6 +5,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 using namespace linea;
 
@@ -13,6 +15,11 @@ namespace {
 const std::uint8_t *pixel(const Image &image, int x, int y) {
     return image.rgba.data() +
            (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x)) * 4;
+}
+
+Color colorAt(const Image &image, int x, int y) {
+    const std::uint8_t *p = pixel(image, x, y);
+    return {p[0], p[1], p[2], p[3]};
 }
 
 Layer filled(Path path, Paint paint) {
@@ -25,6 +32,11 @@ Layer filled(Path path, Paint paint) {
 constexpr Color red{255, 0, 0, 255};
 constexpr Color white{255, 255, 255, 255};
 constexpr Color black{0, 0, 0, 255};
+constexpr Color blue{0, 0, 255, 255};
+
+// A quarter turn clockwise, written out because rotate() leaves rounding where its zeros should be, and the tests below
+// need transforms whose products are exact.
+constexpr Affine quarterTurn{0.0, 1.0, -1.0, 0.0, 0.0, 0.0};
 
 } // namespace
 
@@ -79,5 +91,78 @@ TEST_CASE("A stroke paints along the path, and an empty drawing renders transpar
     CHECK(pixel(image, 5, 5)[3] == 0);
     const Image empty = render({0.0, 10.0, {outline}}, 3, 3);
     for (const std::uint8_t byte : empty.rgba)
+        CHECK(byte == 0);
+}
+
+TEST_CASE("A group placed twice matches its layers transformed by hand") {
+    // A part of a gradient-filled, stroked body and a mark with a transform of its own. Every transform here multiplies
+    // exactly, so composing them in either grouping gives exactly the same matrices.
+    Layer body =
+        filled(rectangle({0.0, 0.0}, {6.0, 3.0}), LinearGradient{{0.0, 0.0}, {6.0, 0.0}, evenStops({red, blue})});
+    body.stroke = Paint{black};
+    body.strokeStyle = {.width = 1.0, .join = Join::miter};
+    Layer mark = filled(rectangle({0.0, 0.0}, {1.0, 2.0}), white);
+    mark.transform = translate({4.0, 0.5});
+    const Group part{.children = {body, mark}, .transform = translate({2.0, 0.0}) * scale(1.0, 2.0)};
+    const Affine first = translate({4.0, 4.0});
+    const Affine second = translate({34.0, 10.0}) * quarterTurn;
+    const Image grouped = render(
+        {40.0, 40.0, {Group{.children = {part}, .transform = first}, Group{.children = {part}, .transform = second}}},
+        80, 80);
+
+    std::vector<Node> byHand;
+    for (const Affine &placement : {first, second}) {
+        for (Layer layer : {body, mark}) {
+            layer.transform = placement * part.transform * layer.transform;
+            byHand.emplace_back(std::move(layer));
+        }
+    }
+    CHECK(grouped.rgba == render({40.0, 40.0, byHand}, 80, 80).rgba);
+    // Each placement lands where its transforms send it, so the match is not one of two empty images.
+    CHECK(pixel(grouped, 18, 14)[3] == 255);
+    CHECK(pixel(grouped, 62, 30)[3] == 255);
+    CHECK(pixel(grouped, 40, 60)[3] == 0);
+}
+
+TEST_CASE("Overlapping layers in a half-transparent group do not show through each other") {
+    const Layer left = filled(rectangle({0.0, 0.0}, {6.0, 4.0}), red);
+    const Layer right = filled(rectangle({2.0, 0.0}, {8.0, 4.0}), blue);
+    const Group veil{.children = {left, right}, .opacity = 0.5};
+    // Alone, the overlap is half of blue, with none of the red beneath it.
+    const Image alone = render({8.0, 4.0, {veil}}, 8, 4);
+    CHECK(colorAt(alone, 4, 2) == Color{0, 0, 255, 128});
+    CHECK(colorAt(alone, 1, 2) == Color{255, 0, 0, 128});
+    // Over white, the overlap lets half of white's light through in red and green: linear 0.5, which sRGB encodes as
+    // 188.
+    const Image overWhite = render({8.0, 4.0, {filled(rectangle({0.0, 0.0}, {8.0, 4.0}), white), veil}}, 8, 4);
+    CHECK(colorAt(overWhite, 4, 2) == Color{188, 188, 255, 255});
+    CHECK(colorAt(overWhite, 1, 2) == Color{255, 188, 188, 255});
+}
+
+TEST_CASE("A half-transparent layer fades its fill and stroke together, so the fill does not show through the stroke") {
+    Layer badge = filled(rectangle({2.0, 2.0}, {8.0, 8.0}), red);
+    badge.stroke = Paint{blue};
+    badge.strokeStyle = {.width = 2.0, .join = Join::miter};
+    badge.opacity = 0.5;
+    const Image image = render({10.0, 10.0, {badge}}, 10, 10);
+    // The stroke's band from x 1 to 3 covers pixel 2 wholly, as the fill does: half of blue, with none of the red.
+    CHECK(colorAt(image, 2, 5) == Color{0, 0, 255, 128});
+    CHECK(colorAt(image, 1, 5) == Color{0, 0, 255, 128});
+    CHECK(colorAt(image, 5, 5) == Color{255, 0, 0, 128});
+}
+
+TEST_CASE("Opacity multiplies through nested groups and their layers, and a transparent group draws nothing") {
+    Layer square = filled(rectangle({0.0, 0.0}, {1.0, 1.0}), blue);
+    square.opacity = 0.5;
+    const Group inner{.children = {square}, .transform = translate({1.0, 0.0}), .opacity = 0.5};
+    const Image image =
+        render({2.0, 2.0, {Group{.children = {inner}, .transform = translate({0.0, 1.0}), .opacity = 0.5}}}, 2, 2);
+    // An eighth of blue, moved by both groups: alpha 255 / 8 = 31.875 rounds to 32, and the color stays blue.
+    CHECK(colorAt(image, 1, 1) == Color{0, 0, 255, 32});
+    CHECK(pixel(image, 0, 0)[3] == 0);
+    CHECK(pixel(image, 1, 0)[3] == 0);
+    CHECK(pixel(image, 0, 1)[3] == 0);
+    const Image hidden = render({2.0, 2.0, {Group{.children = {square}, .opacity = 0.0}}}, 2, 2);
+    for (const std::uint8_t byte : hidden.rgba)
         CHECK(byte == 0);
 }
