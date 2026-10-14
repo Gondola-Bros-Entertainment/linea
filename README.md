@@ -5,8 +5,8 @@ with solid colors, gradients or patterns, and render them anti-aliased at any si
 dependencies beyond the standard library.
 
 An `Image` is plain data, `{ int width, height; std::vector<std::uint8_t> rgba }`: RGBA, row-major, origin at the top
-left, sRGB-encoded with straight alpha, as PNG files store it. It shares tessera's `Canvas` layout and uploads straight
-to SDL (`SDL_PIXELFORMAT_RGBA32`) or any other backend. Everything is a free function over plain structs.
+left, sRGB-encoded with straight alpha, as PNG files store it. It uploads straight to SDL (`SDL_PIXELFORMAT_RGBA32`)
+or any other backend. Everything is a free function over plain structs.
 
 ## Example
 

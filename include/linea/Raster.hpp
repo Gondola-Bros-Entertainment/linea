@@ -9,7 +9,7 @@
 namespace linea {
 
 // An RGBA image, row-major from the top left: 4 bytes a pixel, sRGB-encoded and not multiplied by alpha, as PNG files
-// store them. tessera's Canvas has the same layout.
+// store them.
 struct Image {
     int width{};
     int height{};
