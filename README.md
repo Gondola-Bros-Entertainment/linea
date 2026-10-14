@@ -35,9 +35,9 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | Header | Provides |
 | --- | --- |
 | `Geometry.hpp` | Points, affine transforms (translation, rotation, scale, skew), composition and inverses |
-| `Path.hpp` | Paths of lines, quadratic and cubic Bézier curves and elliptical arcs, with SVG's arc semantics |
+| `Path.hpp` | Paths of lines, quadratic and cubic Bézier curves and elliptical arcs, with SVG's arc semantics; reversing them, and their control-point and tight bounds |
 | `Shapes.hpp` | Circles, ellipses, rectangles, rounded rectangles, polygons, stars and rings as paths |
-| `Flatten.hpp` | Bézier evaluation, and flattening paths into polylines within a tolerance |
+| `Flatten.hpp` | Bézier evaluation and splitting, flattening paths into polylines within a tolerance, and simplifying polylines with Ramer-Douglas-Peucker |
 | `Stroke.hpp` | Stroke outlines with miter, round and bevel joins and butt, round and square caps |
 | `Raster.hpp` | Exact-area anti-aliased coverage under the nonzero and even-odd fill rules |
 | `Paint.hpp` | Colors, and linear and radial gradients that blend in Oklab |
