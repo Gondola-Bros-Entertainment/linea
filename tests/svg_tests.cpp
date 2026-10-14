@@ -626,11 +626,18 @@ TEST_CASE("Transforms compose in the order they are written, the first applied l
     const auto transformOf = [](std::string_view value) {
         return onlyLayer("<path d=\"M0 0\" transform=\"" + std::string(value) + "\"/>").transform;
     };
+    // A compiler may work out the sine, cosine or tangent of a constant angle itself, correctly rounded, where the
+    // reader calls the platform's library, which may round the other way: GCC and macOS give tan(pi / 6) a bit apart.
+    // So transforms built from angles agree to within rounding.
+    const auto checkNear = [](const Affine &actual, const Affine &expected) {
+        for (const auto member : {&Affine::a, &Affine::b, &Affine::c, &Affine::d, &Affine::e, &Affine::f})
+            CHECK(actual.*member == doctest::Approx(expected.*member).epsilon(1e-15));
+    };
     CHECK(transformOf("translate(10,20) scale(2)") == translate({10, 20}) * scale(2.0));
     CHECK(transformOf("translate(10) , scale(2 3)") == translate({10, 0}) * scale(2.0, 3.0));
-    CHECK(transformOf("matrix(1 2 3 4 5 6)rotate(90)") == Affine{1, 2, 3, 4, 5, 6} * rotate(std::numbers::pi / 2.0));
-    CHECK(transformOf("rotate(45 10 20)") == rotateAround(std::numbers::pi / 4.0, {10, 20}));
-    CHECK(transformOf("skewX(30) skewY(-30)") == skewX(std::numbers::pi / 6.0) * skewY(-std::numbers::pi / 6.0));
+    checkNear(transformOf("matrix(1 2 3 4 5 6)rotate(90)"), Affine{1, 2, 3, 4, 5, 6} * rotate(std::numbers::pi / 2.0));
+    checkNear(transformOf("rotate(45 10 20)"), rotateAround(std::numbers::pi / 4.0, {10, 20}));
+    checkNear(transformOf("skewX(30) skewY(-30)"), skewX(std::numbers::pi / 6.0) * skewY(-std::numbers::pi / 6.0));
     CHECK(transformOf("translate(.5.5)") == translate({0.5, 0.5}));
     CHECK(transformOf("") == identity());
     checkRefused("<path d=\"M0 0\" transform=\"rotate(45deg)\"/>", "transform");
