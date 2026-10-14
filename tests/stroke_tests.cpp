@@ -5,6 +5,9 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <numbers>
 #include <vector>
 
@@ -55,10 +58,61 @@ TEST_CASE("A miter longer than the limit becomes a bevel") {
     CHECK(limited == doctest::Approx(bevelled).epsilon(1e-9));
 }
 
-TEST_CASE("Every piece of a stroke winds clockwise, so the nonzero rule unites them") {
-    for (const Contour &piece : strokeOutline(flatten(star({10.0, 10.0}, 8.0, 3.0, 5), 0.01), {.width = 1.5}, 0.01))
-        CHECK(twiceSignedArea(piece) > 0.0);
+TEST_CASE("A stroke's outline does not overlap itself, so it fills the same under either rule") {
+    // The star's stroke has a hole, which winds counterclockwise inside the outer contour.
+    const std::vector<Contour> outline =
+        strokeOutline(flatten(star({10.0, 10.0}, 8.0, 3.0, 5), 0.01), {.width = 1.5}, 0.01);
+    CHECK(std::ranges::any_of(outline, [](const Contour &c) { return twiceSignedArea(c) > 0.0; }));
+    CHECK(std::ranges::any_of(outline, [](const Contour &c) { return twiceSignedArea(c) < 0.0; }));
+    const std::vector<float> nonZero = coverage(outline, 20, 20, FillRule::nonZero);
+    const std::vector<float> evenOdd = coverage(outline, 20, 20, FillRule::evenOdd);
+    for (std::size_t i = 0; i < nonZero.size(); ++i)
+        CHECK(nonZero[i] == doctest::Approx(evenOdd[i]).epsilon(1e-6));
     CHECK(strokeOutline(flatten(segment({0.0, 0.0}, {5.0, 5.0}), 0.1), {.width = 0.0}, 0.1).empty());
+}
+
+TEST_CASE("Where a stroke's pieces meet within a pixel, it covers the exact area of their union there") {
+    // A round-capped stroke along y = 5.3, 3 wide, from x = 2 to x = 7.4. Its top and bottom edges cross pixel rows, so
+    // each cap meets the band inside pixels it covers only partly. Over x the stroke covers the band between the caps'
+    // centers and each cap's chord beyond, so integrating over x gives each pixel's exact covered area.
+    constexpr double from = 2.0;
+    constexpr double to = 7.4;
+    constexpr double middle = 5.3;
+    constexpr double half = 1.5;
+    const auto exact = [&](int px, int py) {
+        constexpr int slices = 20000;
+        double area = 0.0;
+        for (int i = 0; i < slices; ++i) {
+            const double x = px + (i + 0.5) / slices;
+            const double beyond = x < from ? from - x : x > to ? x - to : 0.0;
+            if (beyond >= half)
+                continue;
+            const double reach = std::sqrt(half * half - beyond * beyond);
+            area +=
+                std::max(0.0, std::min(middle + reach, py + 1.0) - std::max(middle - reach, static_cast<double>(py)));
+        }
+        return area / slices;
+    };
+    const std::vector<float> cover =
+        coverage(strokeOutline(flatten(segment({from, middle}, {to, middle}), 1e-4), {.width = 2.0 * half}, 1e-4), 10,
+                 8, FillRule::nonZero);
+    double worst = 0.0;
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 10; ++x)
+            worst = std::max(worst, std::abs(at(cover, 10, x, y) - exact(x, y)));
+    // The caps are polygons within 1e-4 of their circles, so a pixel's coverage strays far less than a step of 255.
+    CHECK(worst < 1e-3);
+}
+
+TEST_CASE("A stroke wider than its closed path covers the path widened by half the width, once") {
+    // Every point of the square lies within half the width of its edges, so the stroke covers the square widened by
+    // 1.5 with round corners, s^2 + 4 s h + pi h^2, though its pieces overlap everywhere inside.
+    constexpr double side = 2.0;
+    constexpr double half = 1.5;
+    const double area = total(coverage(
+        strokeOutline(flatten(rectangle({9.0, 9.0}, {9.0 + side, 9.0 + side}), 1e-4), {.width = 2.0 * half}, 1e-4), 20,
+        20, FillRule::nonZero));
+    CHECK(area == doctest::Approx(side * side + 4.0 * side * half + std::numbers::pi * half * half).epsilon(1e-5));
 }
 
 TEST_CASE("A dashed stroke with butt caps covers the dashed fraction of the solid stroke's area") {
@@ -70,11 +124,13 @@ TEST_CASE("A dashed stroke with butt caps covers the dashed fraction of the soli
     CHECK(strokedArea(line, solid) == doctest::Approx(32.0).epsilon(1e-9));
     CHECK(strokedArea(line, dashed) == doctest::Approx(0.75 * 32.0).epsilon(1e-9));
     // An odd array repeats to an even one, so 1.5, 0.5 and 1 dash half of every 6. A slanted line 18 long holds three
-    // repeats, so whatever the offset, negative too, half of it is dashed.
+    // repeats, so whatever the offset, negative too, half of it is dashed. Off the axes, an outline's corners snap to
+    // the boolean grid, within tolerance / 128 on each axis, which moves an area by at most its perimeter times that:
+    // here under 1e-4 of it.
     const Path slant = segment({1.0, 2.0}, {15.4, 12.8});
     dashed.dashArray = {1.5, 0.5, 1.0};
     dashed.dashOffset = -2.25;
-    CHECK(strokedArea(slant, dashed) == doctest::Approx(0.5 * strokedArea(slant, solid)).epsilon(1e-6));
+    CHECK(strokedArea(slant, dashed) == doctest::Approx(0.5 * strokedArea(slant, solid)).epsilon(1e-4));
 }
 
 TEST_CASE("A dash array that is empty, sums to zero or holds a negative length strokes solid") {
@@ -132,11 +188,12 @@ TEST_CASE("Dashes of no length draw their caps as dots, a square one turned alon
     CHECK(strokedArea(line, {.width = 2.0, .cap = Cap::square, .dashArray = {0.0, 5.0}}, 30) ==
           doctest::Approx(4.0 * 4.0).epsilon(1e-9));
     // One square dot on a diagonal stands on its corner: it reaches only the far corner of the pixel that an upright
-    // one would fill, leaving a corner of 3 - 2 sqrt(2) bare.
+    // one would fill, leaving a corner of 3 - 2 sqrt(2) bare. Its corners snap to the boolean grid as the slanted
+    // dashes' do, which moves its area by under 1e-4 of it.
     const std::vector<float> diamond =
         coverage(strokeOutline(flatten(segment({10.0, 10.0}, {20.0, 20.0}), 0.01),
                                {.width = 2.0, .cap = Cap::square, .dashArray = {0.0, 100.0}}, 0.001),
                  20, 20, FillRule::nonZero);
-    CHECK(total(diamond) == doctest::Approx(4.0).epsilon(1e-6));
+    CHECK(total(diamond) == doctest::Approx(4.0).epsilon(1e-4));
     CHECK(at(diamond, 20, 9, 9) == doctest::Approx(2.0 * std::numbers::sqrt2 - 2.0).epsilon(1e-6));
 }
