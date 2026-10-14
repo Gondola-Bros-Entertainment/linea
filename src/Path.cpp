@@ -116,6 +116,10 @@ Path &Path::arcTo(Vec2 radii, double rotation, bool largeArc, bool clockwise, Ve
         sweep -= fullTurn;
     else if (clockwise && sweep < 0.0)
         sweep += fullTurn;
+    // Ends or radii so far apart that the arithmetic overflows a double leave no angle to sweep: the arc is drawn as
+    // the line between its ends, which an ellipse too large to compute already all but is.
+    if (!std::isfinite(sweep) || !std::isfinite(startAngle))
+        return lineTo(to);
 
     // Each piece spans at most a quarter turn, where a cubic stays within 0.03% of the radius.
     const int pieces = std::max(1, static_cast<int>(std::ceil(std::abs(sweep) / quarterTurn - sweepSlack)));

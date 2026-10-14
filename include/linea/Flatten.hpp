@@ -22,7 +22,7 @@ std::array<Vec2, 7> splitCubic(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, double t);
 
 // One subpath as a polyline. A closed contour's last point joins back to its first.
 struct Contour {
-    std::vector<Vec2> points;
+    std::vector<Vec2> points{};
     bool closed = false;
 };
 

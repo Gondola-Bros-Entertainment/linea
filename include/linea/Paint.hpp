@@ -17,6 +17,7 @@ namespace linea {
 struct GradientStop {
     double offset{};
     Color color{};
+    friend constexpr bool operator==(const GradientStop &, const GradientStop &) = default;
 };
 
 // Each gradient below gives every point an offset, and its stops give each offset a color. Stops sort by offset, each
@@ -53,9 +54,10 @@ enum class SpreadMethod : std::uint8_t {
 struct LinearGradient {
     Vec2 from{};
     Vec2 to{};
-    std::vector<GradientStop> stops;
+    std::vector<GradientStop> stops{};
     SpreadMethod spread = SpreadMethod::pad;
     Interpolation interpolation = Interpolation::oklab;
+    friend bool operator==(const LinearGradient &, const LinearGradient &) = default;
 };
 
 // A gradient from a focal circle out to the circle of @p radius about @p center, as SVG's radialGradient element with
@@ -78,13 +80,14 @@ struct LinearGradient {
 struct RadialGradient {
     Vec2 center{};
     double radius{};
-    std::vector<GradientStop> stops;
+    std::vector<GradientStop> stops{};
     // The focal circle's center, where offset 0 lies, or nothing for @p center.
     std::optional<Vec2> focal{};
     // The focal circle's radius.
     double focalRadius = 0.0;
     SpreadMethod spread = SpreadMethod::pad;
     Interpolation interpolation = Interpolation::oklab;
+    friend bool operator==(const RadialGradient &, const RadialGradient &) = default;
 };
 
 // A gradient around @p center, as CSS's conic-gradient(): a point's offset is the angle, clockwise, from
@@ -96,8 +99,9 @@ struct RadialGradient {
 struct ConicGradient {
     Vec2 center{};
     double startAngle{};
-    std::vector<GradientStop> stops;
+    std::vector<GradientStop> stops{};
     Interpolation interpolation = Interpolation::oklab;
+    friend bool operator==(const ConicGradient &, const ConicGradient &) = default;
 };
 
 // Defined in Drawing.hpp, whose layers hold paints. A pattern holds the drawing it repeats through a pointer, so that a
@@ -118,8 +122,11 @@ struct Drawing;
 // tile's pixels land squarely on the image's, as at whole scales with no turn, each pixel takes its tile pixel's color
 // exactly.
 struct Pattern {
-    std::shared_ptr<const Drawing> tile;
+    std::shared_ptr<const Drawing> tile{};
     Affine transform{};
+    // Whether the two patterns repeat equal tiles, or both none, through equal transforms. Tiles compare by value, so
+    // a copy of a drawing makes an equal pattern.
+    friend bool operator==(const Pattern &, const Pattern &);
 };
 
 // The most pixels a pattern's tile spans along either of its sides when it is drawn for sampling. A tile whose side

@@ -26,6 +26,7 @@ struct StrokeStyle {
     // How far into the dash pattern each subpath starts, as SVG's stroke-dashoffset; a negative offset starts the
     // pattern that far into the subpath. An offset that is not finite strokes solid.
     double dashOffset = 0.0;
+    friend bool operator==(const StrokeStyle &, const StrokeStyle &) = default;
 };
 
 // A dash pattern that would cut a stroke's contours into more than this many dashes in all strokes them solid instead,

@@ -78,12 +78,6 @@ std::array<double, 256> decodeTable() {
     return table;
 }
 
-// @p linear encoded by the sRGB transfer function, which continues its straight segment below 0 and its curve above 1.
-double encodeSrgb(double linear) {
-    return linear <= encodedLimit ? linear * linearSlope
-                                  : (1.0 + curveOffset) * std::pow(linear, 1.0 / curveGamma) - curveOffset;
-}
-
 // @p value, from 0 to 1, as the nearest byte, clamped.
 std::uint8_t toByte(double value) {
     return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0, 1.0) * byteMax));
@@ -97,7 +91,7 @@ double wrapDegrees(double degrees) {
 // Where the linear-light channel @p linear lies against the values that fit: -1 below them, 1 above them and 0 among
 // them.
 int placement(double linear) {
-    const double encoded = encodeSrgb(linear);
+    const double encoded = detail::encodeSrgb(linear);
     if (encoded <= -halfStep)
         return -1;
     if (encoded >= 1.0 + halfStep)
@@ -192,6 +186,11 @@ double decodeSrgb(double encoded) {
                                   : std::pow((encoded + curveOffset) / (1.0 + curveOffset), curveGamma);
 }
 
+double encodeSrgb(double linear) {
+    return linear <= encodedLimit ? linear * linearSlope
+                                  : (1.0 + curveOffset) * std::pow(linear, 1.0 / curveGamma) - curveOffset;
+}
+
 LinearColor linear(Color c) {
     return {srgbToLinear(c.r), srgbToLinear(c.g), srgbToLinear(c.b), static_cast<double>(c.a) / byteMax};
 }
@@ -216,7 +215,7 @@ double srgbToLinear(std::uint8_t value) {
     return table[value];
 }
 
-std::uint8_t linearToSrgb(double value) { return toByte(encodeSrgb(std::clamp(value, 0.0, 1.0))); }
+std::uint8_t linearToSrgb(double value) { return toByte(detail::encodeSrgb(std::clamp(value, 0.0, 1.0))); }
 
 std::string toHex(Color c) {
     constexpr std::string_view digits = "0123456789abcdef";

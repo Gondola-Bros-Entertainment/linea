@@ -52,6 +52,11 @@ TEST_CASE("Arc radii too small to reach scale up, and a zero radius draws a line
     Path flat;
     flat.moveTo({0.0, 0.0}).arcTo({0.0, 4.0}, 0.0, true, true, {10.0, 0.0});
     CHECK(flat.verbs() == std::vector{Verb::move, Verb::line});
+    // Ends so far apart that the arithmetic overflows a double leave no angle to sweep, and draw a line.
+    Path overflowing;
+    overflowing.moveTo({-1e308, 0.0}).arcTo({1.0, 1.0}, 0.0, false, true, {1e308, 0.0});
+    CHECK(overflowing.verbs() == std::vector{Verb::move, Verb::line});
+    CHECK(overflowing.current() == Vec2{1e308, 0.0});
 }
 
 TEST_CASE("A transformed path moves every point, and its bounds hold them all") {

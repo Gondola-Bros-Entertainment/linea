@@ -13,7 +13,7 @@ namespace linea {
 struct Image {
     int width{};
     int height{};
-    std::vector<std::uint8_t> rgba;
+    std::vector<std::uint8_t> rgba{};
 };
 
 // How overlapping and nested contours fill. Nonzero fills where contours wind around a point at all; even-odd fills
