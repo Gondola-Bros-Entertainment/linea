@@ -782,7 +782,8 @@ TEST_CASE("Composite cycles, missing components, unmatched points and runaway ne
     CHECK_THROWS_WITH_AS(static_cast<void>(fanned.glyphPath(1)), doctest::Contains("glyf:"), FontError);
 }
 
-TEST_CASE("Every single-byte corruption of a font is read or rejected, never read out of bounds") {
+TEST_CASE("Every single-byte corruption of a font is read or rejected, never read out of bounds" *
+          doctest::test_suite("slow")) {
     for (const TestFont &font : {testFont(), shortFormat4(testFont())}) {
         const std::vector<std::uint8_t> clean = build(font);
         REQUIRE(readsSafely(clean));
