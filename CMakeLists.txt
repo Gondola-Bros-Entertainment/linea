@@ -49,6 +49,7 @@ if(LINEA_BUILD_TESTS)
     add_executable(linea_tests
         tests/color_tests.cpp
         tests/drawing_tests.cpp
+        tests/effects_tests.cpp
         tests/flatten_tests.cpp
         tests/geometry_tests.cpp
         tests/main.cpp

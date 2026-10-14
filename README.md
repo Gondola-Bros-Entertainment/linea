@@ -44,7 +44,7 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Raster.hpp` | Exact-area anti-aliased coverage under the nonzero and even-odd fill rules |
 | `Color.hpp` | Colors from hex, HSL, Oklab, Oklch and the 148 CSS names, and lighten, darken, saturate, desaturate and mix in Oklab |
 | `Paint.hpp` | Solid colors, and linear and radial gradients that blend in Oklab |
-| `Drawing.hpp` | Layers of filled and stroked paths, and groups of them with their own transform and opacity, composited in linear light |
+| `Drawing.hpp` | Layers of filled and stroked paths and groups of them, each with its own transform, opacity, clip path, Gaussian blur and drop shadow, groups with alpha or luminance masks, composited in linear light |
 | `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and kerning |
 
 Coverage is the exact area of each pixel that a shape covers, so edges are smooth at every size without
@@ -52,8 +52,10 @@ supersampling. Gradients blend in Oklab, a perceptual color space, so a gradient
 not pass through grey. Color adjustments work in Oklab too, so lightening any color by 0.1 raises its perceived
 lightness by the same step. Layers composite in linear light, as light adds up. A group composites its children as
 one image, and a layer its fill and stroke, as SVG's opacity does, so a translucent group or layer fades as a whole
-without its parts showing through each other. Noise is a pure function of a point and a seed, so a seed always
-draws the same shapes, on every platform alike to within rounding.
+without its parts showing through each other. Clips, masks, blurs and drop shadows apply to that same image, in the
+order SVG and CSS apply them, and a blur works in premultiplied linear light, keeping the image's total alpha. Noise
+is a pure function of a point and a seed, so a seed always draws the same shapes, on every platform alike to within
+rounding.
 
 ## Use it from CMake
 

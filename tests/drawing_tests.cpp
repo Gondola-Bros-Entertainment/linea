@@ -1,42 +1,23 @@
+#include "support.hpp"
+
 #include "linea/Drawing.hpp"
 #include "linea/Shapes.hpp"
 
 #include <doctest/doctest.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 using namespace linea;
+using namespace linea::test;
 
 namespace {
-
-const std::uint8_t *pixel(const Image &image, int x, int y) {
-    return image.rgba.data() +
-           (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x)) * 4;
-}
-
-Color colorAt(const Image &image, int x, int y) {
-    const std::uint8_t *p = pixel(image, x, y);
-    return {p[0], p[1], p[2], p[3]};
-}
-
-Layer filled(Path path, Paint paint) {
-    Layer layer;
-    layer.path = std::move(path);
-    layer.fill = std::move(paint);
-    return layer;
-}
 
 constexpr Color red{255, 0, 0, 255};
 constexpr Color white{255, 255, 255, 255};
 constexpr Color black{0, 0, 0, 255};
 constexpr Color blue{0, 0, 255, 255};
-
-// A quarter turn clockwise, written out because rotate() leaves rounding where its zeros should be, and the tests below
-// need transforms whose products are exact.
-constexpr Affine quarterTurn{0.0, 1.0, -1.0, 0.0, 0.0, 0.0};
 
 } // namespace
 
