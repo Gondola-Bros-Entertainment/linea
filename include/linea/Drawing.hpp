@@ -3,6 +3,7 @@
 #pragma once
 
 #include "linea/Geometry.hpp"
+#include "linea/Indirect.hpp"
 #include "linea/Paint.hpp"
 #include "linea/Path.hpp"
 #include "linea/Raster.hpp"
@@ -93,26 +94,39 @@ enum class MaskMode : std::uint8_t {
     luminance,
 };
 
-// Layers whose image scales, pixel by pixel, the alpha of the group they mask, as SVG's mask element does. They are
-// drawn in order in the group's own coordinates, those its transform moves, and where they draw nothing the group does
-// not show. A mask holds layers rather than nodes so that a group can default to no mask: that default is built where
-// Group is defined, before Node is complete, and destroying a std::vector of nodes there would need Node complete.
+// Defined after Node and Mask, which hold groups: a node holds its group through an Indirect, which accepts a type not
+// yet complete.
+struct Group;
+
+// One layer, or a group of nodes. A node holds its group in storage of its own, so that a group can hold nodes, and
+// copies and compares it as a value all the same.
+struct Node {
+    // Implicit, so that a layer or a group stands in a list of nodes as it is: Drawing{width, height, {layer, group}}.
+    // Defined below Group, because a constructor may destroy the content it builds, and destroying a group needs Group
+    // complete.
+    Node(Layer layer);
+    Node(Group group);
+
+    // The layer, or the group.
+    std::variant<Layer, Indirect<Group>> content;
+    friend bool operator==(const Node &, const Node &) = default;
+};
+
+// Nodes whose image scales, pixel by pixel, the alpha of the group they mask, as SVG's mask element does. They are
+// drawn in order in the group's own coordinates, those its transform moves, as its children are, and where they draw
+// nothing the group does not show.
 struct Mask {
-    std::vector<Layer> layers{};
+    std::vector<Node> nodes{};
     MaskMode mode = MaskMode::alpha;
     friend bool operator==(const Mask &, const Mask &) = default;
 };
-
-// Declared ahead so that a group can hold nodes that hold groups: std::vector, unlike std::variant, accepts an element
-// type that is not yet complete.
-struct Node;
 
 // Nodes that move and fade together, so that a part built once can be placed many times. A group draws its children on
 // a transparent image of its own and composites that image over what lies beneath, as SVG draws a g element, so
 // children that overlap in a translucent group do not show through one another.
 struct Group {
     // Drawn in order, each over the ones before it.
-    std::vector<Node> children;
+    std::vector<Node> children{};
     // Moves the children into the coordinates the group sits in, after each child's own transform.
     Affine transform{};
     // Scales the alpha of the children's image as a whole, from 0 to 1.
@@ -123,21 +137,13 @@ struct Group {
     std::optional<DropShadow> shadow{};
     // A path in the group's own coordinates that the children's image shows only inside, or nothing to show it whole.
     std::optional<Clip> clip{};
-    // Layers whose image scales the alpha of the children's, or nothing to leave it whole.
+    // Nodes whose image scales the alpha of the children's, or nothing to leave it whole.
     std::optional<Mask> mask{};
     friend bool operator==(const Group &, const Group &) = default;
 };
 
-// One layer, or a group of nodes.
-struct Node {
-    // Implicit, so that a layer or a group stands in a list of nodes as it is: Drawing{width, height, {layer, group}}.
-    Node(Layer layer) : content(std::move(layer)) {}
-    Node(Group group) : content(std::move(group)) {}
-
-    // The layer or the group itself.
-    std::variant<Layer, Group> content;
-    friend bool operator==(const Node &, const Node &) = default;
-};
+inline Node::Node(Layer layer) : content(std::move(layer)) {}
+inline Node::Node(Group group) : content(Indirect<Group>(std::move(group))) {}
 
 // Nodes drawn in order on a canvas @p width by @p height units, x right and y down from the top left.
 struct Drawing {

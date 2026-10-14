@@ -47,6 +47,8 @@ constexpr Color black{0, 0, 0, opaque};
 constexpr Color transparentBlack{0, 0, 0, 0};
 // CSS counts every character beyond ASCII as one that may stand in an identifier.
 constexpr unsigned char asciiEnd = 0x80;
+// The memory a group takes beside its children's: the node, and the group that the node holds apart from itself.
+constexpr std::size_t groupBytes = sizeof(Node) + sizeof(Group);
 
 std::string lowered(std::string_view text) {
     std::string result(text);
@@ -1413,7 +1415,7 @@ class Reader {
                 readUse(element, style, node, depth);
             else
                 readChildren(element, style, node.children, depth);
-            charge(element, sizeof(Node));
+            charge(element, groupBytes);
             out.emplace_back(std::move(node));
             return;
         }
@@ -1503,7 +1505,7 @@ class Reader {
         filled.opacity = 1.0;
         Group together{{}, identity(), stroked.opacity};
         stroked.opacity = 1.0;
-        charge(element, layerBytes(filled) + layerBytes(stroked) + sizeof(Node));
+        charge(element, layerBytes(filled) + layerBytes(stroked) + groupBytes);
         together.children.emplace_back(std::move(filled));
         together.children.emplace_back(std::move(stroked));
         if (together.opacity == 1.0) {

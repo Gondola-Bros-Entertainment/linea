@@ -148,8 +148,8 @@ Color mix(Color from, Color to, double t);
 
 // A color that CSS names.
 struct NamedColor {
-    std::string_view name;
-    Color color;
+    std::string_view name{};
+    Color color{};
 };
 
 // The 148 named colors of CSS Color 4, in lower case and in alphabetical order. Some share a value: aqua and cyan,

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace linea;
@@ -156,4 +157,27 @@ TEST_CASE("Opacity multiplies through nested groups and their layers, and a tran
     const Image hidden = render({2.0, 2.0, {Group{.children = {square}, .opacity = 0.0}}}, 2, 2);
     for (const std::uint8_t byte : hidden.rgba)
         CHECK(byte == 0);
+}
+
+TEST_CASE("A node copies its group as a value, and nodes and masks compare groups by value") {
+    const Layer square = filled(rectangle({0.0, 0.0}, {1.0, 1.0}), blue);
+    const Node node = Group{.children = {square, Group{.children = {square}}}, .opacity = 0.5};
+    Node copy = node;
+    CHECK(copy == node);
+    Group &copied = *std::get<Indirect<Group>>(copy.content);
+    CHECK(&copied != &*std::get<Indirect<Group>>(node.content));
+    // Changing a group nested in the copy leaves the original's as it was.
+    std::get<Indirect<Group>>(copied.children[1].content)->opacity = 0.25;
+    CHECK(copy != node);
+    const Group &original = *std::get<Indirect<Group>>(node.content);
+    CHECK(std::get<Indirect<Group>>(original.children[1].content)->opacity == 1.0);
+    // A group built apart with the same nodes is equal, and one whose nodes differ is not.
+    CHECK(node == Node{Group{.children = {square, Group{.children = {square}}}, .opacity = 0.5}});
+    CHECK(node != Node{Group{.children = {square, square}, .opacity = 0.5}});
+    CHECK(Node{square} != Node{Group{.children = {square}}});
+    // Masks compare their nodes alike, layers and groups.
+    CHECK(Mask{{square}} == Mask{{square}});
+    CHECK(Mask{{square}} != Mask{{square}, MaskMode::luminance});
+    CHECK(Mask{{node}} == Mask{{node}});
+    CHECK(Mask{{node}} != Mask{{copy}});
 }

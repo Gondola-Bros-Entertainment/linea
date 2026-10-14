@@ -57,8 +57,8 @@ const Layer &layerAt(const std::vector<Node> &nodes, std::size_t i) {
 
 const Group &groupAt(const std::vector<Node> &nodes, std::size_t i) {
     REQUIRE(i < nodes.size());
-    REQUIRE(std::holds_alternative<Group>(nodes[i].content));
-    return std::get<Group>(nodes[i].content);
+    REQUIRE(std::holds_alternative<Indirect<Group>>(nodes[i].content));
+    return *std::get<Indirect<Group>>(nodes[i].content);
 }
 
 // The only layer that @p body draws.
@@ -76,7 +76,7 @@ Layer firstLayer(std::string_view body) {
         REQUIRE_FALSE(nodes->empty());
         if (std::holds_alternative<Layer>(nodes->front().content))
             return std::get<Layer>(nodes->front().content);
-        nodes = &std::get<Group>(nodes->front().content).children;
+        nodes = &std::get<Indirect<Group>>(nodes->front().content)->children;
     }
 }
 
@@ -1420,8 +1420,8 @@ bool allFinite(const std::vector<Node> &nodes) {
         return true;
     };
     return std::ranges::all_of(nodes, [&](const Node &node) {
-        if (const auto *group = std::get_if<Group>(&node.content))
-            return finiteAffine(group->transform) && finite(group->opacity) && allFinite(group->children);
+        if (const auto *group = std::get_if<Indirect<Group>>(&node.content))
+            return finiteAffine((*group)->transform) && finite((*group)->opacity) && allFinite((*group)->children);
         const Layer &layer = std::get<Layer>(node.content);
         return std::ranges::all_of(layer.path.points(), finitePoint) && finiteAffine(layer.transform) &&
                finite(layer.opacity) && finite(layer.strokeStyle.width) && finite(layer.strokeStyle.dashOffset) &&

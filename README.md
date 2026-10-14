@@ -45,6 +45,7 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Boolean.hpp` | Union, intersection, difference and exclusive or of paths, under either fill rule |
 | `Color.hpp` | Colors from hex, HSL, Oklab, Oklch and the 148 CSS names, and lighten, darken, saturate, desaturate and mix in Oklab |
 | `Paint.hpp` | Solid colors; linear, radial and conic gradients with SVG's pad, repeat and reflect, focal circles as the HTML canvas draws them, and blending in Oklab, sRGB or linear light; and patterns that tile a drawing |
+| `Indirect.hpp` | A value held in storage of its own that copies and compares as the value itself, as C++26's `std::indirect`, so that a group can hold nodes that hold groups |
 | `Drawing.hpp` | Layers of filled and stroked paths and groups of them, each with its own transform, opacity, clip path, Gaussian blur and drop shadow, groups with alpha or luminance masks, composited in linear light |
 | `Patterns.hpp` | Dot grids, line grids, crosshatching and checkerboards as ready-made patterns |
 | `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and kerning |

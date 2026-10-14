@@ -64,11 +64,11 @@ std::string toSvg(const Drawing &drawing);
 
 // What fromSvg() reads from an SVG document.
 struct SvgDocument {
-    Drawing drawing;
+    Drawing drawing{};
     // The errors that SVG draws past rather than refusing the document: each in a path's data, or in a polyline's or
     // polygon's points, where SVG draws the shape up to its last whole segment before the error (SVG 2, section 9.5.4),
     // as the drawing does too. Each names the element and gives its place in the document. Every other error throws.
-    std::vector<SvgError> errors;
+    std::vector<SvgError> errors{};
 };
 
 // The drawing that the SVG document @p text describes, its width and height those of the svg element, in px, and its
@@ -105,9 +105,9 @@ std::string toSvgPathData(const Path &path);
 // What fromSvgPathData() reads from SVG path data.
 struct SvgPathData {
     // The path up to its last whole segment before the first error, or the whole path when there is none.
-    Path path;
+    Path path{};
     // The first error, its line and column counted in the data, or nothing for data without one.
-    std::optional<SvgError> error;
+    std::optional<SvgError> error{};
 };
 
 // The path that SVG path data @p data describes, by SVG 2's grammar (section 9.3.9): every command, absolute and
@@ -131,7 +131,7 @@ inline constexpr double svgGradientTolerance = 1.0 / 255.0;
 inline constexpr int deepestSvgNesting = 256;
 
 // fromSvg() refuses a document whose drawing would take more than this many bytes, counted as the sizes of its nodes,
-// path verbs and points, gradient stops and dash lengths. A use element copies the element it refers to, and a
+// groups, path verbs and points, gradient stops and dash lengths. A use element copies the element it refers to, and a
 // reference to a gradient copies its stops, so without a bound a few kilobytes of use elements that refer to one
 // another could ask for more memory than any machine has, as nested entities do in XML's billion laughs attack.
 inline constexpr std::size_t mostSvgDrawingBytes = std::size_t{1} << 28;
