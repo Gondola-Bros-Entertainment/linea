@@ -2,9 +2,16 @@
 // linear light with premultiplied alpha. A translucent group, a translucent layer with both a fill and a stroke, and a
 // node with effects draw on a surface of their own first, where the effects apply, then composite that surface over
 // the image as one.
+//
+// Every step works only on the pixels it can change. A shape rasterizes and composites over the box of pixels around
+// its outline. A node's own surface holds only the part of its plane that its content, spread by its blur and its
+// shadow, reaches, and of that only what its effects read to give the pixels it changes beneath: those the surface
+// beneath holds, within its clip. Each pixel sums the same terms in the same order as on surfaces of the whole image,
+// so the image is the same.
 #include "linea/Drawing.hpp"
 
 #include "ColorSpace.hpp"
+#include "Coverage.hpp"
 #include "Shading.hpp"
 
 #include <algorithm>
@@ -27,13 +34,29 @@ constexpr double greenLuminance = 0.7154;
 constexpr double blueLuminance = 0.0721;
 
 using detail::Pixel;
+using detail::PixelBox;
 
-// An image being drawn, row-major from the top left.
+// Part of an image being drawn: the pixels of a box within a plane, row-major from the box's top left. The plane is
+// the image the drawing maps onto, which sets where edges clamp; drawing changes only the pixels the box holds.
 struct Surface {
+    // The plane's size.
     int width{};
     int height{};
+    PixelBox box;
     std::vector<Pixel> pixels;
+
+    // Pixel (@p x, @p y) of the plane, which the box must hold.
+    Pixel &at(int x, int y) { return pixels[box.index(x, y)]; }
 };
+
+// A transparent surface for the pixels of @p box, which must hold some, in a plane @p width by @p height.
+Surface blank(int width, int height, PixelBox box) {
+    return {width, height, box,
+            std::vector<Pixel>(static_cast<std::size_t>(box.width()) * static_cast<std::size_t>(box.height()))};
+}
+
+// @p box moved @p dx pixels right and @p dy down.
+PixelBox translated(PixelBox box, int dx, int dy) { return {box.x0 + dx, box.y0 + dy, box.x1 + dx, box.y1 + dy}; }
 
 // Composites @p source over @p dest, both premultiplied.
 void over(Pixel &dest, const Pixel &source) {
@@ -43,19 +66,21 @@ void over(Pixel &dest, const Pixel &source) {
 
 // Composites @p shader over @p surface wherever @p cover covers it, sampling the paint at each pixel's center mapped
 // back through @p toPaint.
-void composite(Surface &surface, const std::vector<float> &cover, const detail::Shader &shader, const Affine &toPaint,
+void composite(Surface &surface, const detail::BoxCoverage &cover, const detail::Shader &shader, const Affine &toPaint,
                double opacity) {
-    const auto width = static_cast<std::size_t>(surface.width);
-    for (std::size_t i = 0; i < cover.size(); ++i) {
-        if (cover[i] <= 0.0f)
-            continue;
-        const auto x = static_cast<double>(i % width);
-        const auto y = static_cast<double>(i / width);
-        const detail::LinearColor color = shader.at(apply(toPaint, {x + 0.5, y + 0.5}));
-        const double alpha = color.a * static_cast<double>(cover[i]) * opacity;
-        if (alpha <= 0.0)
-            continue;
-        over(surface.pixels[i], {color.r * alpha, color.g * alpha, color.b * alpha, alpha});
+    const PixelBox box = intersection(cover.box, surface.box);
+    for (int y = box.y0; y < box.y1; ++y) {
+        for (int x = box.x0; x < box.x1; ++x) {
+            const float c = cover.values[cover.box.index(x, y)];
+            if (c <= 0.0f)
+                continue;
+            const detail::LinearColor color =
+                shader.at(apply(toPaint, {static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5}));
+            const double alpha = color.a * static_cast<double>(c) * opacity;
+            if (alpha <= 0.0)
+                continue;
+            over(surface.at(x, y), {color.r * alpha, color.g * alpha, color.b * alpha, alpha});
+        }
     }
 }
 
@@ -64,6 +89,37 @@ std::vector<Contour> mapped(std::vector<Contour> contours, const Affine &m) {
         for (Vec2 &p : contour.points)
             p = apply(m, p);
     return contours;
+}
+
+// A layer's fill and stroke as outlines in pixels, each empty for a paint the layer lacks.
+struct Outlines {
+    std::vector<Contour> fill;
+    std::vector<Contour> stroke;
+};
+
+// The outlines of @p layer, whose path @p toPixels maps to pixels.
+Outlines outlines(const Layer &layer, const Affine &toPixels) {
+    Outlines drawn;
+    if (layer.fill)
+        drawn.fill = flatten(transformed(layer.path, toPixels), renderTolerance);
+    const double stretch = maxScale(toPixels);
+    if (layer.stroke && stretch > 0.0) {
+        // The stroke is built in the path's own coordinates, so a transform widens it as it widens the path, at a
+        // tolerance that stays renderTolerance once the transform scales it.
+        const double tolerance = renderTolerance / stretch;
+        drawn.stroke = mapped(strokeOutline(flatten(layer.path, tolerance), layer.strokeStyle, tolerance), toPixels);
+    }
+    return drawn;
+}
+
+// The pixels of a plane @p width by @p height that @p drawn can cover.
+PixelBox pixelBounds(const Outlines &drawn, int width, int height) {
+    return hull(detail::pixelBounds(drawn.fill, width, height), detail::pixelBounds(drawn.stroke, width, height));
+}
+
+// @p clip's path in pixels, @p toPixels mapping the clipped node's coordinates to them.
+std::vector<Contour> clipOutline(const Clip &clip, const Affine &toPixels) {
+    return flatten(transformed(clip.path, toPixels), renderTolerance);
 }
 
 void draw(Surface &surface, const Layer &layer, const Affine &parent);
@@ -162,7 +218,7 @@ template <class Value> void convolve(std::vector<Value> &plane, int width, const
 void castShadow(Surface &surface, const Kernel &alongX, const Kernel &alongY, Color color) {
     std::vector<double> shade(surface.pixels.size());
     std::ranges::transform(surface.pixels, shade.begin(), &Pixel::a);
-    convolve(shade, surface.width, alongX, alongY);
+    convolve(shade, surface.box.width(), alongX, alongY);
     const detail::LinearColor fill = detail::linear(color);
     for (std::size_t i = 0; i < shade.size(); ++i) {
         const double a = shade[i] * fill.a;
@@ -174,11 +230,10 @@ void castShadow(Surface &surface, const Kernel &alongX, const Kernel &alongY, Co
     }
 }
 
-// The factor by which @p mask scales the alpha of the group it masks, at each pixel of a surface @p width by @p height.
-// @p toPixels maps the group's coordinates to the surface's pixels.
-std::vector<double> maskFactors(const Mask &mask, int width, int height, const Affine &toPixels) {
-    Surface drawn{width, height,
-                  std::vector<Pixel>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height))};
+// The factor by which @p mask scales the alpha of the group it masks, at each pixel of @p box, which must hold some,
+// in a plane @p width by @p height. @p toPixels maps the group's coordinates to the plane's pixels.
+std::vector<double> maskFactors(const Mask &mask, int width, int height, PixelBox box, const Affine &toPixels) {
+    Surface drawn = blank(width, height, box);
     for (const Layer &layer : mask.layers)
         draw(drawn, layer, toPixels);
     std::vector<double> factors(drawn.pixels.size());
@@ -205,122 +260,243 @@ struct Effects {
 // What @p optional holds, or null.
 template <class T> const T *held(const std::optional<T> &optional) { return optional ? &*optional : nullptr; }
 
-// Calls @p drawOn with a transparent surface and the transform from the node's coordinates to that surface's pixels,
-// applies @p effects to what it drew, and composites the result over @p surface as one image. @p toPixels maps the
-// node's coordinates to @p surface's pixels. A blur or a shadow widens the node's surface past @p surface on each side
-// as far as its kernels read, at most effectReach, so that what lies just outside can blur or cast a shadow into view.
-void drawIsolated(Surface &surface, const Affine &toPixels, const Effects &effects,
-                  const std::invocable<Surface &, const Affine &> auto &drawOn) {
+// The effects of a layer or a group, with its opacity clamped to 0 to 1.
+Effects effectsOf(const Layer &layer) {
+    return {layer.blur, held(layer.shadow), held(layer.clip), nullptr, std::clamp(layer.opacity, 0.0, 1.0)};
+}
+Effects effectsOf(const Group &group) {
+    return {group.blur, held(group.shadow), held(group.clip), held(group.mask), std::clamp(group.opacity, 0.0, 1.0)};
+}
+
+// Whether a layer or a group with @p effects draws anything: one that fades out entirely, or has nothing to draw,
+// changes no pixel.
+bool shows(const Layer &layer, const Effects &effects) { return effects.opacity > 0.0 && !layer.path.empty(); }
+bool shows(const Group &group, const Effects &effects) { return effects.opacity > 0.0 && !group.children.empty(); }
+
+// Whether @p layer composites its fill and stroke straight onto the surface beneath. At full opacity nothing fades. A
+// fill or a stroke alone is one coverage composited once, so scaling its alpha by the opacity gives exactly what fading
+// it on a surface of its own would, without that surface.
+bool direct(const Layer &layer, const Effects &effects) {
+    return !effects.any() && (effects.opacity >= 1.0 || !layer.fill || !layer.stroke);
+}
+
+// Whether a group draws its children straight onto the surface beneath. Compositing over is associative, so drawing
+// the children one by one onto the surface gives what drawing them on a surface of their own and compositing that
+// would, without the second surface.
+bool direct(const Group & /*group*/, const Effects &effects) { return !effects.any() && effects.opacity >= 1.0; }
+
+// How a node with effects draws on a surface of its own before compositing onto the plane beneath: the kernels of its
+// blur and its shadow, and its own plane. That plane is the one beneath widened on each side as far as the kernels
+// read, at most effectReach, so that what lies just outside can blur or cast a shadow into view.
+struct Isolation {
+    Kernel blurX;
+    Kernel blurY;
+    // The shadow, or null for none or for one that falls too far to show.
+    const DropShadow *shadow{};
+    Kernel shadowX;
+    Kernel shadowY;
+    // How far the node's plane reaches left of the one beneath and above it, and its size.
+    int left{};
+    int top{};
+    int width{};
+    int height{};
+    // Maps the node's coordinates to its plane's pixels.
+    Affine toPixels;
+};
+
+// How a node with @p effects draws, @p toPixels mapping its coordinates to a plane @p width by @p height.
+Isolation isolation(const Effects &effects, const Affine &toPixels, int width, int height) {
     // A Gaussian of deviation s in the node's coordinates, mapped to pixels by M, has covariance s^2 M M^T, whose
     // diagonal gives its deviation along x and y: s times the length of each row of M.
     const double stretchX = std::hypot(toPixels.a, toPixels.c);
     const double stretchY = std::hypot(toPixels.b, toPixels.d);
-    const Kernel blurX = gaussian(effects.blur * stretchX);
-    const Kernel blurY = gaussian(effects.blur * stretchY);
+    Isolation plan;
+    plan.blurX = gaussian(effects.blur * stretchX);
+    plan.blurY = gaussian(effects.blur * stretchY);
 
     const DropShadow *shadow = effects.shadow;
     const Vec2 offset = shadow ? applyLinear(toPixels, shadow->offset) : Vec2{};
-    // Content on the node's surface lies within effectReach of @p surface, and its shadow spreads at most effectReach
-    // more, so a shadow that falls farther than both and @p surface itself never shows. Dropping it keeps the offset
-    // within an int, and drops one that is not finite.
-    if (shadow && !(std::abs(offset.x) < surface.width + 2.0 * effectReach &&
-                    std::abs(offset.y) < surface.height + 2.0 * effectReach))
+    // Content on the node's plane lies within effectReach of the plane beneath, and its shadow spreads at most
+    // effectReach more, so a shadow that falls farther than both and that plane itself never shows. Dropping it keeps
+    // the offset within an int, and drops one that is not finite.
+    if (shadow && !(std::abs(offset.x) < width + 2.0 * effectReach && std::abs(offset.y) < height + 2.0 * effectReach))
         shadow = nullptr;
-    const Kernel shadowX = shadow ? shifted(gaussian(shadow->deviation * stretchX), offset.x) : unchanged();
-    const Kernel shadowY = shadow ? shifted(gaussian(shadow->deviation * stretchY), offset.y) : unchanged();
+    plan.shadow = shadow;
+    plan.shadowX = shadow ? shifted(gaussian(shadow->deviation * stretchX), offset.x) : unchanged();
+    plan.shadowY = shadow ? shifted(gaussian(shadow->deviation * stretchY), offset.y) : unchanged();
 
     // The shadow reads the blurred image as far as its kernel reaches, and the blur reads the drawn one as far again.
-    const int left = std::min(effectReach, reachBefore(blurX) + reachBefore(shadowX));
-    const int right = std::min(effectReach, reachAfter(blurX) + reachAfter(shadowX));
-    const int top = std::min(effectReach, reachBefore(blurY) + reachBefore(shadowY));
-    const int bottom = std::min(effectReach, reachAfter(blurY) + reachAfter(shadowY));
-    Surface isolated{surface.width + left + right, surface.height + top + bottom, {}};
-    isolated.pixels.resize(static_cast<std::size_t>(isolated.width) * static_cast<std::size_t>(isolated.height));
-    drawOn(isolated, translate({static_cast<double>(left), static_cast<double>(top)}) * toPixels);
+    plan.left = std::min(effectReach, reachBefore(plan.blurX) + reachBefore(plan.shadowX));
+    const int right = std::min(effectReach, reachAfter(plan.blurX) + reachAfter(plan.shadowX));
+    plan.top = std::min(effectReach, reachBefore(plan.blurY) + reachBefore(plan.shadowY));
+    const int bottom = std::min(effectReach, reachAfter(plan.blurY) + reachAfter(plan.shadowY));
+    plan.width = width + plan.left + right;
+    plan.height = height + plan.top + bottom;
+    plan.toPixels = translate({static_cast<double>(plan.left), static_cast<double>(plan.top)}) * toPixels;
+    return plan;
+}
+
+// The pixels of a node's plane that its blur and its shadow carry what lies in @p box to. A kernel that reads a pixel
+// some way before the one it writes carries each pixel that far after it, and the other way about.
+PixelBox spread(PixelBox box, const Isolation &plan) {
+    return {box.x0 - reachAfter(plan.blurX) - reachAfter(plan.shadowX),
+            box.y0 - reachAfter(plan.blurY) - reachAfter(plan.shadowY),
+            box.x1 + reachBefore(plan.blurX) + reachBefore(plan.shadowX),
+            box.y1 + reachBefore(plan.blurY) + reachBefore(plan.shadowY)};
+}
+
+// The pixels of a node's plane that its blur and its shadow read to give those of @p box.
+PixelBox sources(PixelBox box, const Isolation &plan) {
+    return {box.x0 - reachBefore(plan.blurX) - reachBefore(plan.shadowX),
+            box.y0 - reachBefore(plan.blurY) - reachBefore(plan.shadowY),
+            box.x1 + reachAfter(plan.blurX) + reachAfter(plan.shadowX),
+            box.y1 + reachAfter(plan.blurY) + reachAfter(plan.shadowY)};
+}
+
+// The pixels of a plane @p width by @p height that a node drawn as @p plan changes, before its clip, when its content
+// covers @p content of its own plane. Content that covers nothing changes nothing, however far the kernels reach.
+PixelBox changed(const Isolation &plan, PixelBox content, int width, int height) {
+    if (content.empty())
+        return {};
+    return intersection(translated(spread(content, plan), -plan.left, -plan.top), {0, 0, width, height});
+}
+
+PixelBox reach(const std::vector<Node> &nodes, const Affine &parent, int width, int height);
+
+// The pixels of a plane @p width by @p height that drawing @p layer or @p group changes, @p parent mapping the
+// coordinates it sits in to the plane's pixels. Drawing changes no pixel outside them.
+PixelBox reach(const Layer &layer, const Affine &parent, int width, int height) {
+    const Effects effects = effectsOf(layer);
+    if (!shows(layer, effects))
+        return {};
+    const Affine toPixels = parent * layer.transform;
+    if (direct(layer, effects))
+        return pixelBounds(outlines(layer, toPixels), width, height);
+    const Isolation plan = isolation(effects, toPixels, width, height);
+    const PixelBox box =
+        changed(plan, pixelBounds(outlines(layer, plan.toPixels), plan.width, plan.height), width, height);
+    return effects.clip ? intersection(box, detail::pixelBounds(clipOutline(*effects.clip, toPixels), width, height))
+                        : box;
+}
+
+PixelBox reach(const Group &group, const Affine &parent, int width, int height) {
+    const Effects effects = effectsOf(group);
+    if (!shows(group, effects))
+        return {};
+    const Affine toPixels = parent * group.transform;
+    if (direct(group, effects))
+        return reach(group.children, toPixels, width, height);
+    const Isolation plan = isolation(effects, toPixels, width, height);
+    const PixelBox box = changed(plan, reach(group.children, plan.toPixels, plan.width, plan.height), width, height);
+    return effects.clip ? intersection(box, detail::pixelBounds(clipOutline(*effects.clip, toPixels), width, height))
+                        : box;
+}
+
+PixelBox reach(const std::vector<Node> &nodes, const Affine &parent, int width, int height) {
+    PixelBox box;
+    for (const Node &node : nodes) {
+        const PixelBox drawn =
+            std::visit([&](const auto &content) { return reach(content, parent, width, height); }, node.content);
+        box = hull(box, drawn);
+    }
+    return box;
+}
+
+// Calls @p drawOn with a transparent surface on @p plan's plane, applies @p effects to what it drew, and composites
+// the result over @p surface as one image. @p toPixels maps the node's coordinates to @p surface's pixels, and what the
+// node draws covers @p content of its own plane.
+//
+// Only the pixels of @p surface that the node changes composite: those its content reaches once the blur and the
+// shadow spread it, that @p surface holds, within the clip. The node's surface holds only the pixels of its plane that
+// its effects read to give those, and that its content reaches; every pixel the effects read beyond them is one the
+// content leaves transparent, so each of those pixels takes the same terms, in the same order, as over the whole
+// plane.
+void drawIsolated(Surface &surface, const Affine &toPixels, const Isolation &plan, const Effects &effects,
+                  PixelBox content, const std::invocable<Surface &> auto &drawOn) {
+    PixelBox box = intersection(changed(plan, content, surface.width, surface.height), surface.box);
+    detail::BoxCoverage clipCover;
+    if (effects.clip) {
+        clipCover = detail::boxCoverage(clipOutline(*effects.clip, toPixels), surface.width, surface.height,
+                                        effects.clip->fillRule);
+        box = intersection(box, clipCover.box);
+    }
+    if (box.empty())
+        return;
+
+    const PixelBox plane{0, 0, plan.width, plan.height};
+    const PixelBox needed = sources(translated(box, plan.left, plan.top), plan);
+    Surface isolated = blank(plan.width, plan.height, intersection(intersection(spread(content, plan), needed), plane));
+    drawOn(isolated);
 
     if (effects.blur > 0.0)
-        convolve(isolated.pixels, isolated.width, blurX, blurY);
-    if (shadow)
-        castShadow(isolated, shadowX, shadowY, shadow->color);
-    std::vector<float> clipCover;
-    if (effects.clip)
-        clipCover = coverage(flatten(transformed(effects.clip->path, toPixels), renderTolerance), surface.width,
-                             surface.height, effects.clip->fillRule);
+        convolve(isolated.pixels, isolated.box.width(), plan.blurX, plan.blurY);
+    if (plan.shadow)
+        castShadow(isolated, plan.shadowX, plan.shadowY, plan.shadow->color);
     std::vector<double> maskFactor;
     if (effects.mask)
-        maskFactor = maskFactors(*effects.mask, surface.width, surface.height, toPixels);
+        maskFactor = maskFactors(*effects.mask, surface.width, surface.height, box, toPixels);
 
-    const auto width = static_cast<std::size_t>(surface.width);
-    const auto isolatedWidth = static_cast<std::size_t>(isolated.width);
-    for (std::size_t i = 0; i < surface.pixels.size(); ++i) {
-        const std::size_t x = i % width + static_cast<std::size_t>(left);
-        const std::size_t y = i / width + static_cast<std::size_t>(top);
-        const Pixel &p = isolated.pixels[y * isolatedWidth + x];
-        double factor = effects.opacity;
-        if (effects.clip)
-            factor *= static_cast<double>(clipCover[i]);
-        if (effects.mask)
-            factor *= maskFactor[i];
-        if (p.a > 0.0 && factor > 0.0)
-            over(surface.pixels[i], {p.r * factor, p.g * factor, p.b * factor, p.a * factor});
+    for (int y = box.y0; y < box.y1; ++y) {
+        for (int x = box.x0; x < box.x1; ++x) {
+            const Pixel &p = isolated.at(x + plan.left, y + plan.top);
+            double factor = effects.opacity;
+            if (effects.clip)
+                factor *= static_cast<double>(clipCover.values[clipCover.box.index(x, y)]);
+            if (effects.mask)
+                factor *= maskFactor[box.index(x, y)];
+            if (p.a > 0.0 && factor > 0.0)
+                over(surface.at(x, y), {p.r * factor, p.g * factor, p.b * factor, p.a * factor});
+        }
     }
 }
 
-// Composites @p layer's fill and then its stroke over @p surface, each with its alpha scaled by @p opacity. @p toPixels
-// maps the path's coordinates to pixels.
-void paint(Surface &surface, const Layer &layer, const Affine &toPixels, double opacity) {
+// Composites @p drawn, the outlines of @p layer, fill and then stroke, over @p surface, each with its alpha scaled by
+// @p opacity. @p toPixels maps the path's coordinates to pixels.
+void paint(Surface &surface, const Layer &layer, const Outlines &drawn, const Affine &toPixels, double opacity) {
     const Affine toPaint = inverse(toPixels);
-    if (layer.fill) {
-        const std::vector<Contour> outline = flatten(transformed(layer.path, toPixels), renderTolerance);
-        composite(surface, coverage(outline, surface.width, surface.height, layer.fillRule),
-                  detail::Shader(*layer.fill, toPixels), toPaint, opacity);
-    }
-    const double stretch = maxScale(toPixels);
-    if (layer.stroke && stretch > 0.0) {
-        // The stroke is built in the path's own coordinates, so a transform widens it as it widens the path, at a
-        // tolerance that stays renderTolerance once the transform scales it.
-        const double tolerance = renderTolerance / stretch;
-        const std::vector<Contour> pen =
-            mapped(strokeOutline(flatten(layer.path, tolerance), layer.strokeStyle, tolerance), toPixels);
-        composite(surface, coverage(pen, surface.width, surface.height, FillRule::nonZero),
-                  detail::Shader(*layer.stroke, toPixels), toPaint, opacity);
-    }
+    const auto paintOver = [&](const std::vector<Contour> &contours, const Paint &with, FillRule rule) {
+        const detail::BoxCoverage cover = detail::boxCoverage(contours, surface.width, surface.height, rule);
+        // A paint is made ready to sample, which draws a pattern's tile, only where it shows.
+        if (!intersection(cover.box, surface.box).empty())
+            composite(surface, cover, detail::Shader(with, toPixels), toPaint, opacity);
+    };
+    if (layer.fill)
+        paintOver(drawn.fill, *layer.fill, layer.fillRule);
+    if (layer.stroke)
+        paintOver(drawn.stroke, *layer.stroke, FillRule::nonZero);
 }
 
 void drawNodes(Surface &surface, const std::vector<Node> &nodes, const Affine &parent);
 
 // Draws @p layer on @p surface. @p parent maps the coordinates the layer sits in to pixels.
 void draw(Surface &surface, const Layer &layer, const Affine &parent) {
-    const double opacity = std::clamp(layer.opacity, 0.0, 1.0);
-    if (!(opacity > 0.0) || layer.path.empty())
+    const Effects effects = effectsOf(layer);
+    if (!shows(layer, effects))
         return;
     const Affine toPixels = parent * layer.transform;
-    const Effects effects{layer.blur, held(layer.shadow), held(layer.clip), nullptr, opacity};
-    if (!effects.any() && (opacity >= 1.0 || !layer.fill || !layer.stroke)) {
-        // At full opacity nothing fades. A fill or a stroke alone is one coverage composited once, so scaling its alpha
-        // by the opacity gives exactly what fading it on a surface of its own would, without that surface.
-        paint(surface, layer, toPixels, opacity);
+    if (direct(layer, effects)) {
+        paint(surface, layer, outlines(layer, toPixels), toPixels, effects.opacity);
         return;
     }
-    drawIsolated(surface, toPixels, effects,
-                 [&](Surface &isolated, const Affine &toIsolated) { paint(isolated, layer, toIsolated, 1.0); });
+    const Isolation plan = isolation(effects, toPixels, surface.width, surface.height);
+    const Outlines drawn = outlines(layer, plan.toPixels);
+    drawIsolated(surface, toPixels, plan, effects, pixelBounds(drawn, plan.width, plan.height),
+                 [&](Surface &isolated) { paint(isolated, layer, drawn, plan.toPixels, 1.0); });
 }
 
 // Draws @p group on @p surface. @p parent maps the coordinates the group sits in to pixels.
 void draw(Surface &surface, const Group &group, const Affine &parent) {
-    const double opacity = std::clamp(group.opacity, 0.0, 1.0);
-    if (!(opacity > 0.0) || group.children.empty())
+    const Effects effects = effectsOf(group);
+    if (!shows(group, effects))
         return;
     const Affine toPixels = parent * group.transform;
-    const Effects effects{group.blur, held(group.shadow), held(group.clip), held(group.mask), opacity};
-    if (!effects.any() && opacity >= 1.0) {
-        // Compositing over is associative, so drawing the children one by one onto the surface gives what drawing them
-        // on a surface of their own and compositing that would, without the second surface.
+    if (direct(group, effects)) {
         drawNodes(surface, group.children, toPixels);
         return;
     }
-    drawIsolated(surface, toPixels, effects,
-                 [&](Surface &isolated, const Affine &toIsolated) { drawNodes(isolated, group.children, toIsolated); });
+    const Isolation plan = isolation(effects, toPixels, surface.width, surface.height);
+    drawIsolated(surface, toPixels, plan, effects, reach(group.children, plan.toPixels, plan.width, plan.height),
+                 [&](Surface &isolated) { drawNodes(isolated, group.children, plan.toPixels); });
 }
 
 // Draws @p nodes on @p surface in order. @p parent maps the coordinates the nodes sit in to pixels.
@@ -334,8 +510,7 @@ void drawNodes(Surface &surface, const std::vector<Node> &nodes, const Affine &p
 namespace detail {
 
 std::vector<Pixel> draw(const Drawing &drawing, int width, int height) {
-    Surface surface{width, height,
-                    std::vector<Pixel>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height))};
+    Surface surface = blank(width, height, {0, 0, width, height});
     drawNodes(surface, drawing.nodes, scale(width / drawing.width, height / drawing.height));
     return std::move(surface.pixels);
 }

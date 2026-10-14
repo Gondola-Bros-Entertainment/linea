@@ -67,6 +67,22 @@ TEST_CASE("A slanted edge that crosses the image's left or right side keeps its 
     CHECK(at(fill(polygon(across), 10, 10), 10, 5, 4) == doctest::Approx(5.0 / 6.0));
 }
 
+TEST_CASE("A shape covers nothing outside the box around it, however its edges round") {
+    // A circle's slanted edges add their areas to each row with rounding, which a running sum over the whole row would
+    // carry on past the circle. Every pixel outside its box stays exactly empty.
+    const std::vector<float> round = fill(circle({10.0, 10.0}, 7.3), 64, 20);
+    for (int y = 0; y < 20; ++y)
+        for (int x = 18; x < 64; ++x)
+            CHECK(at(round, 64, x, y) == 0.0);
+    // The edge from (2.5, -3) down to (2, 0.25) enters the image at x = 2 + 0.5 / 13 and steps a quarter row from
+    // there, which rounds to x = 1.9999999999999998, a hair left of its end. The pixel there stays empty, and the
+    // triangle keeps its area inside the image, 12.5 / 13, to the precision of a float.
+    const Vec2 corners[] = {{2.5, -3.0}, {2.0, 0.25}, {6.0, 0.25}};
+    const std::vector<float> sliver = fill(polygon(corners), 16, 4);
+    CHECK(at(sliver, 16, 1, 0) == 0.0);
+    CHECK(total(sliver) == doctest::Approx(12.5 / 13.0).epsilon(1e-6));
+}
+
 TEST_CASE("The fill rules differ where contours wind around a point more than once") {
     // A pentagram drawn in one stroke winds twice around its center.
     std::vector<Vec2> points;
