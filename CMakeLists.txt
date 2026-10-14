@@ -33,6 +33,7 @@ add_library(linea
     src/Noise.cpp
     src/Paint.cpp
     src/Path.cpp
+    src/Patterns.cpp
     src/Raster.cpp
     src/Shading.cpp
     src/Shapes.cpp
@@ -55,7 +56,9 @@ if(LINEA_BUILD_TESTS)
         tests/main.cpp
         tests/measure_tests.cpp
         tests/noise_tests.cpp
+        tests/paint_tests.cpp
         tests/path_tests.cpp
+        tests/pattern_tests.cpp
         tests/raster_tests.cpp
         tests/stroke_tests.cpp
         tests/text_tests.cpp)

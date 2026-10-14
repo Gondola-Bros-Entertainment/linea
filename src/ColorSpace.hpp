@@ -1,4 +1,4 @@
-// linea - linear light and Oklab, the conversions that colors and gradient shading share. Internal.
+// linea - sRGB, linear light and Oklab, the conversions that colors and gradient shading share. Internal.
 #pragma once
 
 #include "linea/Color.hpp"
@@ -12,6 +12,9 @@ struct LinearColor {
     double b{};
     double a{};
 };
+
+// The linear light that the sRGB transfer function encodes as @p encoded, from 0 to 1.
+double decodeSrgb(double encoded);
 
 // @p c in linear light, its alpha scaled to 0 to 1.
 LinearColor linear(Color c);

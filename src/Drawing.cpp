@@ -12,6 +12,7 @@
 #include <concepts>
 #include <cstddef>
 #include <iterator>
+#include <utility>
 
 namespace linea {
 namespace {
@@ -25,13 +26,7 @@ constexpr double redLuminance = 0.2125;
 constexpr double greenLuminance = 0.7154;
 constexpr double blueLuminance = 0.0721;
 
-// Linear-light color with premultiplied alpha, one per pixel.
-struct Pixel {
-    double r{};
-    double g{};
-    double b{};
-    double a{};
-};
+using detail::Pixel;
 
 // An image being drawn, row-major from the top left.
 struct Surface {
@@ -278,7 +273,7 @@ void paint(Surface &surface, const Layer &layer, const Affine &toPixels, double 
     if (layer.fill) {
         const std::vector<Contour> outline = flatten(transformed(layer.path, toPixels), renderTolerance);
         composite(surface, coverage(outline, surface.width, surface.height, layer.fillRule),
-                  detail::Shader(*layer.fill), toPaint, opacity);
+                  detail::Shader(*layer.fill, toPixels), toPaint, opacity);
     }
     const double stretch = maxScale(toPixels);
     if (layer.stroke && stretch > 0.0) {
@@ -288,7 +283,7 @@ void paint(Surface &surface, const Layer &layer, const Affine &toPixels, double 
         const std::vector<Contour> pen =
             mapped(strokeOutline(flatten(layer.path, tolerance), layer.strokeStyle, tolerance), toPixels);
         composite(surface, coverage(pen, surface.width, surface.height, FillRule::nonZero),
-                  detail::Shader(*layer.stroke), toPaint, opacity);
+                  detail::Shader(*layer.stroke, toPixels), toPaint, opacity);
     }
 }
 
@@ -336,6 +331,17 @@ void drawNodes(Surface &surface, const std::vector<Node> &nodes, const Affine &p
 
 } // namespace
 
+namespace detail {
+
+std::vector<Pixel> draw(const Drawing &drawing, int width, int height) {
+    Surface surface{width, height,
+                    std::vector<Pixel>(static_cast<std::size_t>(width) * static_cast<std::size_t>(height))};
+    drawNodes(surface, drawing.nodes, scale(width / drawing.width, height / drawing.height));
+    return std::move(surface.pixels);
+}
+
+} // namespace detail
+
 Image render(const Drawing &drawing, int pixelWidth, int pixelHeight) {
     const int width = std::max(1, pixelWidth);
     const int height = std::max(1, pixelHeight);
@@ -344,11 +350,9 @@ Image render(const Drawing &drawing, int pixelWidth, int pixelHeight) {
     if (!(drawing.width > 0.0) || !(drawing.height > 0.0))
         return image;
 
-    Surface surface{width, height, std::vector<Pixel>(count)};
-    drawNodes(surface, drawing.nodes, scale(width / drawing.width, height / drawing.height));
-
+    const std::vector<Pixel> pixels = detail::draw(drawing, width, height);
     for (std::size_t i = 0; i < count; ++i) {
-        const Pixel &p = surface.pixels[i];
+        const Pixel &p = pixels[i];
         if (p.a <= 0.0)
             continue;
         std::uint8_t *out = image.rgba.data() + i * 4;

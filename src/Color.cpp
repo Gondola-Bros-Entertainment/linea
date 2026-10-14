@@ -73,10 +73,8 @@ constexpr Vector3 multiply(const Matrix3 &m, const Vector3 &v) {
 
 std::array<double, 256> decodeTable() {
     std::array<double, 256> table{};
-    for (std::size_t i = 0; i < table.size(); ++i) {
-        const double v = static_cast<double>(i) / byteMax;
-        table[i] = v <= linearLimit ? v / linearSlope : std::pow((v + curveOffset) / (1.0 + curveOffset), curveGamma);
-    }
+    for (std::size_t i = 0; i < table.size(); ++i)
+        table[i] = detail::decodeSrgb(static_cast<double>(i) / byteMax);
     return table;
 }
 
@@ -188,6 +186,11 @@ double fittingShare(double l, double a, double b) {
 } // namespace
 
 namespace detail {
+
+double decodeSrgb(double encoded) {
+    return encoded <= linearLimit ? encoded / linearSlope
+                                  : std::pow((encoded + curveOffset) / (1.0 + curveOffset), curveGamma);
+}
 
 LinearColor linear(Color c) {
     return {srgbToLinear(c.r), srgbToLinear(c.g), srgbToLinear(c.b), static_cast<double>(c.a) / byteMax};
