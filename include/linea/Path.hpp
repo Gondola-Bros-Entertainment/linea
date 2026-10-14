@@ -76,12 +76,26 @@ class Path {
 // @p path with every point moved by @p m.
 Path transformed(const Path &path, const Affine &m);
 
-// The smallest axis-aligned box around every point of @p path, control points included, which therefore contains
-// the whole path.
+// @p path traced from its end back to its start: its subpaths in reverse order, each from its last point to its first
+// along the same lines and curves, every curve's control points in reverse order. A closed subpath stays closed and
+// starts where its last segment ended, so that its closing line runs backward too, and reversing twice gives back
+// @p path.
+Path reversed(const Path &path);
+
+// An axis-aligned box from its least corner to its greatest.
 struct Bounds {
     Vec2 min{};
     Vec2 max{};
 };
+
+// The smallest axis-aligned box around every point of @p path, control points included, which therefore contains
+// the whole path.
 Bounds controlBounds(const Path &path);
+
+// The smallest axis-aligned box around the lines and curves of @p path themselves: around every point the path moves
+// to or ends a segment at, and every point where a curve turns back in x or y, at a root of its derivative. Control
+// points that the curve does not reach do not stretch it, and it never reaches past controlBounds(path), not even by
+// rounding.
+Bounds tightBounds(const Path &path);
 
 } // namespace linea

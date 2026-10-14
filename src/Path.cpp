@@ -1,6 +1,8 @@
 // linea - Path implementation.
 #include "linea/Path.hpp"
 
+#include "linea/Flatten.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -16,6 +18,43 @@ constexpr double sweepSlack = 1e-9;
 
 // The signed angle from @p u to @p v, in (-pi, pi].
 double angleBetween(Vec2 u, Vec2 v) { return std::atan2(cross(u, v), dot(u, v)); }
+
+// Grows @p bounds to hold @p p.
+void include(Bounds &bounds, Vec2 p) {
+    bounds.min = {std::min(bounds.min.x, p.x), std::min(bounds.min.y, p.y)};
+    bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y)};
+}
+
+// Calls @p visit with each root of a t^2 + b t + c strictly between 0 and 1. The quadratic formula takes the form that
+// never subtracts nearly equal numbers, so neither root loses precision to cancellation, and a of 0 leaves a linear
+// equation.
+template <typename Visit> void forEachUnitRoot(double a, double b, double c, Visit visit) {
+    const auto inside = [&](double t) {
+        if (t > 0.0 && t < 1.0)
+            visit(t);
+    };
+    if (a == 0.0) {
+        if (b != 0.0)
+            inside(-c / b);
+        return;
+    }
+    const double discriminant = b * b - 4.0 * a * c;
+    if (discriminant < 0.0)
+        return;
+    const double q = -0.5 * (b + std::copysign(std::sqrt(discriminant), b));
+    inside(q / a);
+    // q is 0 only for the double root t = 0, which lies outside.
+    if (q != 0.0)
+        inside(c / q);
+}
+
+// Grows @p bounds to hold the points of a curve, found by @p pointAt, where the polynomial a t^2 + b t + c that its
+// derivative is a multiple of is zero in x or in y.
+template <typename PointAt> void includeTurns(Bounds &bounds, Vec2 a, Vec2 b, Vec2 c, PointAt pointAt) {
+    const auto turn = [&](double t) { include(bounds, pointAt(t)); };
+    forEachUnitRoot(a.x, b.x, c.x, turn);
+    forEachUnitRoot(a.y, b.y, c.y, turn);
+}
 
 } // namespace
 
@@ -183,16 +222,97 @@ Path transformed(const Path &path, const Affine &m) {
     return result;
 }
 
+Path reversed(const Path &path) {
+    const std::vector<Verb> &verbs = path.verbs();
+    const std::vector<Vec2> &points = path.points();
+    Path result;
+    // Walking backward, verb and end count the verbs and points not yet visited. Every subpath starts with a move, so
+    // each segment starts at the point just before its own: the last point of the verb before it.
+    std::size_t verb = verbs.size();
+    std::size_t end = points.size();
+    while (verb > 0) {
+        const bool closed = verbs[verb - 1] == Verb::close;
+        if (closed)
+            --verb;
+        result.moveTo(points[end - 1]);
+        // Between a subpath's move and its close lie only lines and curves.
+        for (; verbs[verb - 1] != Verb::move; --verb) {
+            const Verb segment = verbs[verb - 1];
+            const std::size_t at = end - static_cast<std::size_t>(pointCount(segment));
+            const Vec2 from = points[at - 1];
+            if (segment == Verb::line)
+                result.lineTo(from);
+            else if (segment == Verb::quad)
+                result.quadTo(points[at], from);
+            else
+                result.cubicTo(points[at + 1], points[at], from);
+            end = at;
+        }
+        // Step past the subpath's move, where the reversed subpath has just ended.
+        --verb;
+        --end;
+        if (closed)
+            result.close();
+    }
+    return result;
+}
+
 Bounds controlBounds(const Path &path) {
     const std::vector<Vec2> &points = path.points();
     if (points.empty())
         return {};
     Bounds bounds{points.front(), points.front()};
-    for (const Vec2 p : points) {
-        bounds.min = {std::min(bounds.min.x, p.x), std::min(bounds.min.y, p.y)};
-        bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y)};
-    }
+    for (const Vec2 p : points)
+        include(bounds, p);
     return bounds;
+}
+
+Bounds tightBounds(const Path &path) {
+    const std::vector<Vec2> &points = path.points();
+    if (points.empty())
+        return {};
+    Bounds bounds{points.front(), points.front()};
+    std::size_t at = 0;
+    Vec2 current{};
+    for (const Verb verb : path.verbs()) {
+        const Vec2 *p = points.data() + at;
+        switch (verb) {
+        case Verb::move:
+        case Verb::line:
+            include(bounds, p[0]);
+            current = p[0];
+            break;
+        case Verb::quad: {
+            // A quadratic's derivative is 2 (d0 + (d1 - d0) t), with d0 = p1 - p0 and d1 = p2 - p1.
+            const Vec2 d0 = p[0] - current;
+            const Vec2 d1 = p[1] - p[0];
+            includeTurns(bounds, {}, d1 - d0, d0, [&](double t) { return evalQuad(current, p[0], p[1], t); });
+            include(bounds, p[1]);
+            current = p[1];
+            break;
+        }
+        case Verb::cubic: {
+            // A cubic's derivative is 3 ((d0 - 2 d1 + d2) t^2 + 2 (d1 - d0) t + d0), with d0 = p1 - p0, d1 = p2 - p1
+            // and d2 = p3 - p2.
+            const Vec2 d0 = p[0] - current;
+            const Vec2 d1 = p[1] - p[0];
+            const Vec2 d2 = p[2] - p[1];
+            includeTurns(bounds, d0 - d1 * 2.0 + d2, (d1 - d0) * 2.0, d0,
+                         [&](double t) { return evalCubic(current, p[0], p[1], p[2], t); });
+            include(bounds, p[2]);
+            current = p[2];
+            break;
+        }
+        case Verb::close:
+            break;
+        }
+        at += static_cast<std::size_t>(pointCount(verb));
+    }
+    // A curve lies within its control points, but rounding in evaluating it where it turns can land just past them, so
+    // the box is cut back to theirs.
+    const Bounds control = controlBounds(path);
+    return {{std::max(bounds.min.x, control.min.x), std::max(bounds.min.y, control.min.y)},
+            {std::min(bounds.max.x, control.max.x), std::min(bounds.max.y, control.max.y)}};
 }
 
 } // namespace linea
