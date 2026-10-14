@@ -25,6 +25,7 @@ endfunction()
 # Vector graphics: paths, shapes, strokes, paints and an anti-aliased rasterizer, with no dependencies beyond the
 # standard library.
 add_library(linea
+    src/Boolean.cpp
     src/Color.cpp
     src/Drawing.cpp
     src/Flatten.cpp
@@ -37,6 +38,7 @@ add_library(linea
     src/Raster.cpp
     src/Shading.cpp
     src/Shapes.cpp
+    src/Snap.cpp
     src/Stroke.cpp
     src/Text.cpp)
 add_library(linea::linea ALIAS linea)
@@ -48,6 +50,7 @@ linea_warnings(linea)
 if(LINEA_BUILD_TESTS)
     enable_testing()
     add_executable(linea_tests
+        tests/boolean_tests.cpp
         tests/color_tests.cpp
         tests/drawing_tests.cpp
         tests/effects_tests.cpp

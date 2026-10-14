@@ -42,6 +42,7 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Stroke.hpp` | Stroke outlines with miter, round and bevel joins, butt, round and square caps, and SVG's dash patterns |
 | `Noise.hpp` | Seeded Perlin, simplex and fractal noise, Voronoi cells, and paths wobbled into organic outlines |
 | `Raster.hpp` | Exact-area anti-aliased coverage under the nonzero and even-odd fill rules |
+| `Boolean.hpp` | Union, intersection, difference and exclusive or of paths, under either fill rule |
 | `Color.hpp` | Colors from hex, HSL, Oklab, Oklch and the 148 CSS names, and lighten, darken, saturate, desaturate and mix in Oklab |
 | `Paint.hpp` | Solid colors; linear, radial and conic gradients with SVG's pad, repeat and reflect, focal circles as the HTML canvas draws them, and blending in Oklab, sRGB or linear light; and patterns that tile a drawing |
 | `Drawing.hpp` | Layers of filled and stroked paths and groups of them, each with its own transform, opacity, clip path, Gaussian blur and drop shadow, groups with alpha or luminance masks, composited in linear light |
