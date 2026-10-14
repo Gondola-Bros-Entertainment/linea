@@ -158,6 +158,8 @@ class Writer {
         std::visit([&](const auto &content) { write(content, depth); }, node.content);
     }
 
+    void write(const Indirect<Group> &group, int depth) { write(*group, depth); }
+
     void write(const Group &group, int depth) {
         refuseEffects("Group", group.blur, group.shadow, group.clip);
         if (group.mask)

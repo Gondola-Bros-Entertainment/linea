@@ -34,8 +34,8 @@ std::optional<PathPoint> pointAt(const Path &path, double distance);
 
 // The two parts of a path on either side of a cut.
 struct PathParts {
-    Path before;
-    Path after;
+    Path before{};
+    Path after{};
 };
 
 // @p path cut at @p distance along it, measured as arcLength() measures, into the part before and the part after, which

@@ -167,7 +167,7 @@ TEST_CASE("A luminance mask scales a group's alpha by the mask's luminance in li
     Mask mask{.mode = MaskMode::luminance};
     for (int i = 0; i < 6; ++i) {
         const double x = i;
-        mask.layers.push_back(filled(rectangle({x, 0.0}, {x + 1.0, 1.0}), shades[i]));
+        mask.nodes.push_back(filled(rectangle({x, 0.0}, {x + 1.0, 1.0}), shades[i]));
     }
     const Group masked{.children = {filled(rectangle({0.0, 0.0}, {6.0, 1.0}), blue)}, .mask = mask};
     const Image image = render({6.0, 1.0, {masked}}, 6, 1);
@@ -175,6 +175,19 @@ TEST_CASE("A luminance mask scales a group's alpha by the mask's luminance in li
         CHECK(pixel(image, i, 0)[3] == expected[i]);
     // The mask scales alpha only, so the group keeps its color wherever it shows.
     CHECK(colorAt(image, 1, 0) == Color{0, 0, 255, 182});
+}
+
+TEST_CASE("A mask draws its groups as a drawing does, each as one image") {
+    // Two opaque black squares that overlap from 4 to 6, in a group at half opacity moved 2 pixels right. As one image
+    // the group gives half alpha wherever either square lies; the squares faded one by one would give three quarters
+    // where they overlap.
+    const Layer left = filled(rectangle({0.0, 0.0}, {4.0, 2.0}), Color{0, 0, 0, 255});
+    const Layer right = filled(rectangle({2.0, 0.0}, {6.0, 2.0}), Color{0, 0, 0, 255});
+    const Group veil{.children = {left, right}, .transform = translate({2.0, 0.0}), .opacity = 0.5};
+    const Group masked{.children = {filled(rectangle({0.0, 0.0}, {10.0, 2.0}), red)}, .mask = Mask{{veil}}};
+    const Image image = render({10.0, 2.0, {masked}}, 10, 2);
+    for (int x = 0; x < 10; ++x)
+        CHECK(colorAt(image, x, 1) == (x >= 2 && x < 8 ? Color{255, 0, 0, 128} : clear));
 }
 
 TEST_CASE("A blur keeps total alpha, and draws in what lies just outside the image") {

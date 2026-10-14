@@ -122,7 +122,7 @@ std::vector<Contour> clipOutline(const Clip &clip, const Affine &toPixels) {
     return flatten(transformed(clip.path, toPixels), renderTolerance);
 }
 
-void draw(Surface &surface, const Layer &layer, const Affine &parent);
+void drawNodes(Surface &surface, const std::vector<Node> &nodes, const Affine &parent);
 
 // Weights that convolve a plane along one axis: the result at x is the sum of weights[k] times the value at
 // x + first + k.
@@ -234,8 +234,7 @@ void castShadow(Surface &surface, const Kernel &alongX, const Kernel &alongY, Co
 // in a plane @p width by @p height. @p toPixels maps the group's coordinates to the plane's pixels.
 std::vector<double> maskFactors(const Mask &mask, int width, int height, PixelBox box, const Affine &toPixels) {
     Surface drawn = blank(width, height, box);
-    for (const Layer &layer : mask.layers)
-        draw(drawn, layer, toPixels);
+    drawNodes(drawn, mask.nodes, toPixels);
     std::vector<double> factors(drawn.pixels.size());
     std::ranges::transform(drawn.pixels, factors.begin(), [&](const Pixel &p) {
         // Premultiplied, the luminance of the channels is already the luminance times the alpha.
@@ -392,6 +391,11 @@ PixelBox reach(const Group &group, const Affine &parent, int width, int height) 
                         : box;
 }
 
+// The pixels that drawing the group @p group holds changes.
+PixelBox reach(const Indirect<Group> &group, const Affine &parent, int width, int height) {
+    return reach(*group, parent, width, height);
+}
+
 PixelBox reach(const std::vector<Node> &nodes, const Affine &parent, int width, int height) {
     PixelBox box;
     for (const Node &node : nodes) {
@@ -466,8 +470,6 @@ void paint(Surface &surface, const Layer &layer, const Outlines &drawn, const Af
         paintOver(drawn.stroke, *layer.stroke, FillRule::nonZero);
 }
 
-void drawNodes(Surface &surface, const std::vector<Node> &nodes, const Affine &parent);
-
 // Draws @p layer on @p surface. @p parent maps the coordinates the layer sits in to pixels.
 void draw(Surface &surface, const Layer &layer, const Affine &parent) {
     const Effects effects = effectsOf(layer);
@@ -498,6 +500,9 @@ void draw(Surface &surface, const Group &group, const Affine &parent) {
     drawIsolated(surface, toPixels, plan, effects, reach(group.children, plan.toPixels, plan.width, plan.height),
                  [&](Surface &isolated) { drawNodes(isolated, group.children, plan.toPixels); });
 }
+
+// Draws the group that @p group holds on @p surface.
+void draw(Surface &surface, const Indirect<Group> &group, const Affine &parent) { draw(surface, *group, parent); }
 
 // Draws @p nodes on @p surface in order. @p parent maps the coordinates the nodes sit in to pixels.
 void drawNodes(Surface &surface, const std::vector<Node> &nodes, const Affine &parent) {

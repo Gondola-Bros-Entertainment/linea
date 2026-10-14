@@ -54,12 +54,14 @@ linea_warnings(linea)
 if(LINEA_BUILD_TESTS)
     enable_testing()
     add_executable(linea_tests
+        tests/aggregate_tests.cpp
         tests/boolean_tests.cpp
         tests/color_tests.cpp
         tests/drawing_tests.cpp
         tests/effects_tests.cpp
         tests/flatten_tests.cpp
         tests/geometry_tests.cpp
+        tests/indirect_tests.cpp
         tests/main.cpp
         tests/measure_tests.cpp
         tests/noise_tests.cpp
