@@ -1,7 +1,13 @@
 // linea - Stroke implementation. A stroke is the union of a quad for every segment, a join at every corner and a cap at
-// every open end. Each piece winds clockwise, so the nonzero rule fills their union however they overlap. A dashed
-// stroke is the union of its dashes' strokes, each dash an open stretch of its contour.
+// every open end. Each piece winds clockwise, so the nonzero rule fills their union however they overlap, and the
+// boolean engine then traces that union's boundary, so that no two parts of the outline overlap: coverage, which adds
+// up the area each contour covers in a pixel, would count twice where they did. A dashed stroke is the union of its
+// dashes' strokes, each dash an open stretch of its contour.
 #include "linea/Stroke.hpp"
+
+#include "Combine.hpp"
+
+#include "linea/Boolean.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -50,15 +56,20 @@ void add(std::vector<Contour> &out, std::vector<Vec2> points) {
     out.push_back(std::move(piece));
 }
 
+// How many sides a polygon takes for a whole circle of @p radius: enough that a chord strays at most @p tolerance from
+// its arc. A chord of a circle of radius r through an angle a strays r (1 - cos(a / 2)) from the arc.
+int circleSides(double radius, double tolerance) {
+    if (!(tolerance < radius))
+        return fewestSides;
+    return static_cast<int>(std::clamp(std::ceil(std::numbers::pi / std::acos(1.0 - tolerance / radius)),
+                                       static_cast<double>(fewestSides), static_cast<double>(mostSides)));
+}
+
 // A polygon with the same area as the circle: its corners lie a little outside and its edges a little inside, where an
-// inscribed polygon would lie wholly inside and leave every round join and cap thin.
+// inscribed polygon would lie wholly inside and leave every round dot thin. Equal areas put the corners 2/3 of a
+// chord's stray outside the circle and the edges' middles 1/3 of it inside.
 void addCircle(std::vector<Contour> &out, Vec2 center, double radius, double tolerance) {
-    // A chord of a circle of radius r through an angle a strays r (1 - cos(a / 2)) from the arc. Equal areas then put
-    // the corners 2/3 of that outside the circle and the edges' middles 1/3 of it inside.
-    int sides = fewestSides;
-    if (tolerance < radius)
-        sides = static_cast<int>(std::clamp(std::ceil(std::numbers::pi / std::acos(1.0 - tolerance / radius)),
-                                            static_cast<double>(fewestSides), static_cast<double>(mostSides)));
+    const int sides = circleSides(radius, tolerance);
     const double step = 2.0 * std::numbers::pi / sides;
     const double corner = radius * std::sqrt(step / std::sin(step));
     std::vector<Vec2> points;
@@ -68,26 +79,60 @@ void addCircle(std::vector<Contour> &out, Vec2 center, double radius, double tol
     add(out, std::move(points));
 }
 
+// The sector of the circle around @p center from @p center + @p from to @p center + @p to, the arc passing the way the
+// unit vector @p middle points; @p from and @p to are radii. Its ends lie on the circle, where the sides of a stroke
+// end, and the corners between them lie as far out as keeps the sector's area, as addCircle()'s do. An arc short enough
+// to stray at most @p tolerance from its chord is the triangle alone.
+void addWedge(std::vector<Contour> &out, Vec2 center, Vec2 from, Vec2 to, Vec2 middle, double tolerance) {
+    const double radius = length(from);
+    const double sweep = std::atan2(std::abs(cross(from, middle)), dot(from, middle)) +
+                         std::atan2(std::abs(cross(middle, to)), dot(middle, to));
+    const double turning = cross(from, middle) > 0.0 ? 1.0 : -1.0;
+    const auto steps =
+        static_cast<int>(std::max(1.0, std::ceil(sweep * circleSides(radius, tolerance) / (2.0 * std::numbers::pi))));
+    std::vector<Vec2> points{center, center + from};
+    if (steps > 1) {
+        // A fan of steps triangles whose two outer corners lie on the circle and the steps - 1 between them at a
+        // radius rho has the area (sin(step) / 2) (2 r rho + (steps - 2) rho^2); equal to the sector's, r^2 sweep / 2,
+        // that fixes rho.
+        const double step = sweep / steps;
+        const double between = steps - 2.0;
+        const double share = sweep / std::sin(step);
+        const double rho =
+            steps == 2 ? radius * share / 2.0 : radius * (std::sqrt(1.0 + between * share) - 1.0) / between;
+        const double start = std::atan2(from.y, from.x);
+        for (int i = 1; i < steps; ++i)
+            points.push_back(polar(center, rho, start + turning * step * i));
+    }
+    points.push_back(center + to);
+    add(out, std::move(points));
+}
+
 // The band a pen sweeps from @p a to @p b, heading along the unit vector @p direction.
 void addSegment(std::vector<Contour> &out, Vec2 a, Vec2 b, Vec2 direction, double half) {
     const Vec2 normal = perpendicular(direction) * half;
     add(out, {a + normal, b + normal, b - normal, a - normal});
 }
 
-// The join at @p corner between a segment along @p before and the next along @p after, both unit vectors.
+// The join at @p corner between a segment along @p before and the next along @p after, both unit vectors. The two
+// segments' bands already cover every point within half the width whose nearest point on them lies along one of them.
+// The rest lie beyond the corner, past the end of the one and before the start of the other: on the outer side,
+// between the two segments' normals there. So a join fills only that wedge, round, mitered or bevelled.
 void addJoin(std::vector<Contour> &out, Vec2 corner, Vec2 before, Vec2 after, const StrokeStyle &style, double half,
              double tolerance) {
     const double turn = cross(before, after);
     if (std::abs(turn) < straight && dot(before, after) > 0.0)
         return;
-    if (style.join == Join::round) {
-        addCircle(out, corner, half, tolerance);
-        return;
-    }
     // The outer side of the corner is the one the path turns away from.
     const double side = turn > 0.0 ? -1.0 : 1.0;
     const Vec2 out0 = perpendicular(before) * (half * side);
     const Vec2 out1 = perpendicular(after) * (half * side);
+    if (style.join == Join::round) {
+        // The wedge's arc passes straight ahead of the way in and straight back along the way out, even where the path
+        // turns all the way around.
+        addWedge(out, corner, out0, out1, normalized(before - after), tolerance);
+        return;
+    }
     if (style.join == Join::miter) {
         const Vec2 bisector = normalized(out0 + out1);
         const double cosHalf = dot(bisector, out0) / half;
@@ -99,15 +144,18 @@ void addJoin(std::vector<Contour> &out, Vec2 corner, Vec2 before, Vec2 after, co
     add(out, {corner, corner + out0, corner + out1});
 }
 
-// The cap at @p end of an open stroke, which leaves the end along the unit vector @p outward.
+// The cap at @p end of an open stroke, which leaves the end along the unit vector @p outward. The end's segment covers
+// everything behind it, so a round cap is the half of the circle ahead.
 void addCap(std::vector<Contour> &out, Vec2 end, Vec2 outward, const StrokeStyle &style, double half,
             double tolerance) {
     switch (style.cap) {
     case Cap::butt:
         return;
-    case Cap::round:
-        addCircle(out, end, half, tolerance);
+    case Cap::round: {
+        const Vec2 normal = perpendicular(outward) * half;
+        addWedge(out, end, normal, -normal, outward, tolerance);
         return;
+    }
     case Cap::square: {
         const Vec2 normal = perpendicular(outward) * half;
         const Vec2 beyond = end + outward * half;
@@ -328,7 +376,7 @@ std::vector<Contour> strokeOutline(const std::vector<Contour> &contours, const S
             addRun(out, line, {0, 0.0}, {line.directions.size() - 1, total}, style, half, tolerance);
         }
     }
-    return out;
+    return detail::combineContours(std::move(out), {}, BooleanOp::unite, tolerance, FillRule::nonZero);
 }
 
 } // namespace linea

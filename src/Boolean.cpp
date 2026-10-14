@@ -8,6 +8,7 @@
 // run with the result on that side, so its outer contours wind clockwise and its holes counterclockwise.
 #include "linea/Boolean.hpp"
 
+#include "Combine.hpp"
 #include "Snap.hpp"
 
 #include "linea/Flatten.hpp"
@@ -54,14 +55,8 @@ double powerOfTwoAtLeast(double x) {
     return below == x ? below : 2.0 * below;
 }
 
-// The subpaths of @p path as polylines, leaving out any with a point that is not finite.
-std::vector<Contour> outline(const Path &path, double tolerance) {
-    std::vector<Contour> contours = flatten(path, tolerance);
-    std::erase_if(contours, [](const Contour &contour) {
-        return !std::all_of(contour.points.begin(), contour.points.end(), finite);
-    });
-    return contours;
-}
+// Whether every point of @p contour is finite, so that it has a place on the grid.
+bool placed(const Contour &contour) { return std::all_of(contour.points.begin(), contour.points.end(), finite); }
 
 // The grid for points within @p reach of @p center on either axis, or nothing when they all coincide.
 std::optional<Grid> gridFor(Vec2 center, double reach, double tolerance) {
@@ -293,9 +288,12 @@ std::vector<std::vector<GridPoint>> contoursOf(std::vector<Step> steps) {
 
 } // namespace
 
-Path combine(const Path &a, const Path &b, BooleanOp op, double tolerance, FillRule rule) {
-    const std::vector<Contour> first = outline(a, tolerance);
-    const std::vector<Contour> second = outline(b, tolerance);
+namespace detail {
+
+std::vector<Contour> combineContours(std::vector<Contour> first, std::vector<Contour> second, BooleanOp op,
+                                     double tolerance, FillRule rule) {
+    std::erase_if(first, [](const Contour &contour) { return !placed(contour); });
+    std::erase_if(second, [](const Contour &contour) { return !placed(contour); });
 
     // Halves keep the bounds' arithmetic finite for any finite coordinates.
     Vec2 low{};
@@ -311,7 +309,7 @@ Path combine(const Path &a, const Path &b, BooleanOp op, double tolerance, FillR
             }
         }
     }
-    Path result;
+    std::vector<Contour> result;
     const std::optional<Grid> grid = gridFor(low + high, std::max(high.x - low.x, high.y - low.y), tolerance);
     if (!grid)
         return result;
@@ -329,9 +327,24 @@ Path combine(const Path &a, const Path &b, BooleanOp op, double tolerance, FillR
             steps.push_back(aboveIn ? Step{arc.start, arc.end} : Step{arc.end, arc.start});
     }
     for (const std::vector<GridPoint> &contour : contoursOf(std::move(steps))) {
-        result.moveTo(fromGrid(contour.front(), *grid));
-        for (std::size_t i = 1; i < contour.size(); ++i)
-            result.lineTo(fromGrid(contour[i], *grid));
+        Contour &traced = result.emplace_back();
+        traced.closed = true;
+        traced.points.reserve(contour.size());
+        for (const GridPoint q : contour)
+            traced.points.push_back(fromGrid(q, *grid));
+    }
+    return result;
+}
+
+} // namespace detail
+
+Path combine(const Path &a, const Path &b, BooleanOp op, double tolerance, FillRule rule) {
+    Path result;
+    for (const Contour &contour :
+         detail::combineContours(flatten(a, tolerance), flatten(b, tolerance), op, tolerance, rule)) {
+        result.moveTo(contour.points.front());
+        for (std::size_t i = 1; i < contour.points.size(); ++i)
+            result.lineTo(contour.points[i]);
         result.close();
     }
     return result;

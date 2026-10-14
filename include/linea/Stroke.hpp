@@ -33,8 +33,11 @@ struct StrokeStyle {
 // as Skia gives up past a limit of its own, so that a pattern far finer than its path cannot exhaust memory.
 inline constexpr double mostDashes = 65536.0;
 
-// The area that a pen of @p style covers along @p contours, as polygons that fill it under the nonzero rule. Round
-// joins and caps stray at most @p tolerance from true arcs.
+// The area that a pen of @p style covers along @p contours, as closed polygons that do not overlap: outer ones wind
+// clockwise on a y-down canvas and holes counterclockwise inside them, so they fill the same under either rule, and
+// coverage() gives each pixel the area of the stroke within it however its segments, joins and caps overlap. Round
+// joins and caps stray at most @p tolerance from true arcs. The pieces are united as combine() unites paths, so every
+// corner lies within @p tolerance / 128, on each axis, of a corner of a piece or a crossing of two pieces' edges.
 //
 // A dash pattern cuts each contour into dashes at SVG's dash positions, measured along the contour from its first
 // point. Each dash is stroked on its own, with a cap at each end and a join at each corner within it. On a closed
