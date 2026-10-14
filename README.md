@@ -44,6 +44,7 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Color.hpp` | Colors from hex, HSL, Oklab, Oklch and the 148 CSS names, and lighten, darken, saturate, desaturate and mix in Oklab |
 | `Paint.hpp` | Solid colors, and linear and radial gradients that blend in Oklab |
 | `Drawing.hpp` | Layers of filled and stroked paths, and groups of them with their own transform and opacity, composited in linear light |
+| `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and kerning |
 
 Coverage is the exact area of each pixel that a shape covers, so edges are smooth at every size without
 supersampling. Gradients blend in Oklab, a perceptual color space, so a gradient between two saturated colors does

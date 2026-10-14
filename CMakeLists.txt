@@ -35,7 +35,8 @@ add_library(linea
     src/Raster.cpp
     src/Shading.cpp
     src/Shapes.cpp
-    src/Stroke.cpp)
+    src/Stroke.cpp
+    src/Text.cpp)
 add_library(linea::linea ALIAS linea)
 target_include_directories(linea PUBLIC include)
 target_compile_features(linea PUBLIC cxx_std_20)
@@ -53,9 +54,13 @@ if(LINEA_BUILD_TESTS)
         tests/measure_tests.cpp
         tests/path_tests.cpp
         tests/raster_tests.cpp
-        tests/stroke_tests.cpp)
+        tests/stroke_tests.cpp
+        tests/text_tests.cpp)
     target_link_libraries(linea_tests PRIVATE linea)
     target_include_directories(linea_tests SYSTEM PRIVATE third_party/doctest)
+    # The text tests read a vendored font from the source tree, wherever the tests run from.
+    target_compile_definitions(linea_tests
+        PRIVATE LINEA_TEST_FONT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fonts/LatoLatin-Regular.ttf")
     linea_warnings(linea_tests)
     add_test(NAME linea_tests COMMAND linea_tests)
 endif()
