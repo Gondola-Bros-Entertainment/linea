@@ -15,6 +15,8 @@ struct LinearColor {
 
 // The linear light that the sRGB transfer function encodes as @p encoded, from 0 to 1.
 double decodeSrgb(double encoded);
+// @p linear encoded by the sRGB transfer function, which continues its straight segment below 0 and its curve above 1.
+double encodeSrgb(double linear);
 
 // @p c in linear light, its alpha scaled to 0 to 1.
 LinearColor linear(Color c);

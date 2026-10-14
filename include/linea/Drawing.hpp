@@ -39,9 +39,10 @@ inline constexpr int effectReach = 512;
 // where a pixel holds an edge of both, the product of their coverages stands for the area they share. The path is in
 // the node's own coordinates, those its transform moves, so the clip moves with the node.
 struct Clip {
-    Path path;
+    Path path{};
     // Which parts of the path's contours the clip covers, as SVG's clip-rule.
     FillRule fillRule = FillRule::nonZero;
+    friend bool operator==(const Clip &, const Clip &) = default;
 };
 
 // A shadow beneath a node, as CSS's drop-shadow() filter casts one: the node's alpha, blurred, moved and filled with a
@@ -55,16 +56,17 @@ struct DropShadow {
     double deviation = 0.0;
     // The shadow's color. Its alpha scales the shadow's.
     Color color{};
+    friend constexpr bool operator==(const DropShadow &, const DropShadow &) = default;
 };
 
 // One path, filled and then stroked as SVG paints it. Paints use the path's own coordinates, so they move with it.
 struct Layer {
-    Path path;
+    Path path{};
     // The paint inside the path, or nothing for no fill.
-    std::optional<Paint> fill;
+    std::optional<Paint> fill{};
     FillRule fillRule = FillRule::nonZero;
     // The paint along the path's outline, or nothing for no stroke.
-    std::optional<Paint> stroke;
+    std::optional<Paint> stroke{};
     StrokeStyle strokeStyle{};
     // Moves the path, its paints and its stroke into the coordinates of the drawing or group the layer sits in.
     Affine transform{};
@@ -78,6 +80,7 @@ struct Layer {
     std::optional<DropShadow> shadow{};
     // A path in the layer's own coordinates that the fill and stroke show only inside, or nothing to show them whole.
     std::optional<Clip> clip{};
+    friend bool operator==(const Layer &, const Layer &) = default;
 };
 
 // What a mask's image gives as the factor that scales the alpha of the group it masks.
@@ -97,6 +100,7 @@ enum class MaskMode : std::uint8_t {
 struct Mask {
     std::vector<Layer> layers{};
     MaskMode mode = MaskMode::alpha;
+    friend bool operator==(const Mask &, const Mask &) = default;
 };
 
 // Declared ahead so that a group can hold nodes that hold groups: std::vector, unlike std::variant, accepts an element
@@ -121,6 +125,7 @@ struct Group {
     std::optional<Clip> clip{};
     // Layers whose image scales the alpha of the children's, or nothing to leave it whole.
     std::optional<Mask> mask{};
+    friend bool operator==(const Group &, const Group &) = default;
 };
 
 // One layer, or a group of nodes.
@@ -131,13 +136,15 @@ struct Node {
 
     // The layer or the group itself.
     std::variant<Layer, Group> content;
+    friend bool operator==(const Node &, const Node &) = default;
 };
 
 // Nodes drawn in order on a canvas @p width by @p height units, x right and y down from the top left.
 struct Drawing {
     double width{};
     double height{};
-    std::vector<Node> nodes;
+    std::vector<Node> nodes{};
+    friend bool operator==(const Drawing &, const Drawing &) = default;
 };
 
 // How far, in pixels, a rendered curve or round join strays at most from the true shape.

@@ -40,7 +40,11 @@ add_library(linea
     src/Shapes.cpp
     src/Snap.cpp
     src/Stroke.cpp
-    src/Text.cpp)
+    src/Svg.cpp
+    src/SvgRead.cpp
+    src/SvgWrite.cpp
+    src/Text.cpp
+    src/Xml.cpp)
 add_library(linea::linea ALIAS linea)
 target_include_directories(linea PUBLIC include)
 target_compile_features(linea PUBLIC cxx_std_20)
@@ -64,6 +68,7 @@ if(LINEA_BUILD_TESTS)
         tests/pattern_tests.cpp
         tests/raster_tests.cpp
         tests/stroke_tests.cpp
+        tests/svg_tests.cpp
         tests/text_tests.cpp)
     target_link_libraries(linea_tests PRIVATE linea)
     target_include_directories(linea_tests SYSTEM PRIVATE third_party/doctest)

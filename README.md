@@ -48,6 +48,7 @@ The drawing is 100 by 100 units, and `render` draws it at whatever size it is as
 | `Drawing.hpp` | Layers of filled and stroked paths and groups of them, each with its own transform, opacity, clip path, Gaussian blur and drop shadow, groups with alpha or luminance masks, composited in linear light |
 | `Patterns.hpp` | Dot grids, line grids, crosshatching and checkerboards as ready-made patterns |
 | `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and kerning |
+| `Svg.hpp` | Drawings written as SVG documents that read back exactly, and SVG documents read as drawings, refusing what linea cannot draw as a browser would; SVG path data both ways |
 
 Coverage is the exact area of each pixel that a shape covers, so edges are smooth at every size without
 supersampling. Gradients blend in Oklab by default, a perceptual color space, so a gradient between two saturated
@@ -59,7 +60,8 @@ each other. Clips, masks, blurs and drop shadows apply to that same image, in th
 blur works in premultiplied linear light, keeping the image's total alpha. A pattern draws its tile once at the
 resolution it has on the image and repeats it, so it stays sharp at any size and moves with its layer as a gradient
 does. Noise is a pure function of a point and a seed, so a seed always draws the same shapes, on every platform alike
-to within rounding.
+to within rounding. SVG documents are read with an XML reader of linea's own that refuses entity declarations and bounds
+nesting and what use elements may copy, so a document from anywhere is safe to read.
 
 ## Use it from CMake
 
@@ -75,7 +77,8 @@ target_link_libraries(my_game PRIVATE linea::linea)
 ## Build and test
 
 Requires CMake 3.21 or newer and a C++20 compiler. CI builds and tests with GCC and Clang on Linux, MSVC on Windows and
-Apple Clang on macOS, and runs the tests under AddressSanitizer and UndefinedBehaviorSanitizer.
+Apple Clang on macOS, and runs the tests under AddressSanitizer and UndefinedBehaviorSanitizer. On macOS, the deployment
+target must be 13.3 or later, the first whose libc++ has the floating-point `std::to_chars` that writing SVG uses.
 
 ```sh
 cmake -S . -B build

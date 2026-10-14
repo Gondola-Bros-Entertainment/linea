@@ -48,7 +48,8 @@ class Path {
     // An elliptical arc to @p to, as SVG's A command draws one: an ellipse with @p radii, rotated by @p rotation
     // radians, and of the two arcs and two ellipses that pass through both ends, the larger arc when @p largeArc and
     // the one that turns clockwise on a y-down canvas when @p clockwise. Radii too small to reach scale up until they
-    // do, and a zero radius draws a line, as SVG specifies.
+    // do, and a zero radius draws a line, as SVG specifies. Ends or radii so far apart that the arc's arithmetic
+    // overflows a double draw a line too.
     Path &arcTo(Vec2 radii, double rotation, bool largeArc, bool clockwise, Vec2 to);
     Path &close();
 
