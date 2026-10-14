@@ -29,6 +29,7 @@ add_library(linea
     src/Drawing.cpp
     src/Flatten.cpp
     src/Geometry.cpp
+    src/Measure.cpp
     src/Paint.cpp
     src/Path.cpp
     src/Raster.cpp
@@ -49,6 +50,7 @@ if(LINEA_BUILD_TESTS)
         tests/flatten_tests.cpp
         tests/geometry_tests.cpp
         tests/main.cpp
+        tests/measure_tests.cpp
         tests/path_tests.cpp
         tests/raster_tests.cpp
         tests/stroke_tests.cpp)

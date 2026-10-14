@@ -3,6 +3,8 @@
 
 #include "linea/Flatten.hpp"
 
+#include "Roots.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -25,35 +27,12 @@ void include(Bounds &bounds, Vec2 p) {
     bounds.max = {std::max(bounds.max.x, p.x), std::max(bounds.max.y, p.y)};
 }
 
-// Calls @p visit with each root of a t^2 + b t + c strictly between 0 and 1. The quadratic formula takes the form that
-// never subtracts nearly equal numbers, so neither root loses precision to cancellation, and a of 0 leaves a linear
-// equation.
-template <typename Visit> void forEachUnitRoot(double a, double b, double c, Visit visit) {
-    const auto inside = [&](double t) {
-        if (t > 0.0 && t < 1.0)
-            visit(t);
-    };
-    if (a == 0.0) {
-        if (b != 0.0)
-            inside(-c / b);
-        return;
-    }
-    const double discriminant = b * b - 4.0 * a * c;
-    if (discriminant < 0.0)
-        return;
-    const double q = -0.5 * (b + std::copysign(std::sqrt(discriminant), b));
-    inside(q / a);
-    // q is 0 only for the double root t = 0, which lies outside.
-    if (q != 0.0)
-        inside(c / q);
-}
-
 // Grows @p bounds to hold the points of a curve, found by @p pointAt, where the polynomial a t^2 + b t + c that its
 // derivative is a multiple of is zero in x or in y.
 template <typename PointAt> void includeTurns(Bounds &bounds, Vec2 a, Vec2 b, Vec2 c, PointAt pointAt) {
     const auto turn = [&](double t) { include(bounds, pointAt(t)); };
-    forEachUnitRoot(a.x, b.x, c.x, turn);
-    forEachUnitRoot(a.y, b.y, c.y, turn);
+    detail::forEachUnitRoot(a.x, b.x, c.x, turn);
+    detail::forEachUnitRoot(a.y, b.y, c.y, turn);
 }
 
 } // namespace
