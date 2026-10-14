@@ -22,18 +22,32 @@ namespace linea {
 // shadow, which falls from the blurred node, then the clip, which cuts both, then a group's mask, then the opacity. A
 // node without effects pays nothing for them: it draws exactly as its opacity alone requires.
 //
-// A blur convolves the node's image, in premultiplied linear light, with a Gaussian sampled at whole pixels out to
-// three standard deviations each way, rounded up to a whole pixel, and scaled to sum to 1, so that it keeps the image's
-// total alpha. Cut there, the kernel spreads up to about 1.3% less widely than the whole Gaussian would. Its standard
-// deviation is in the node's own units, and the node's transform carries it into pixels: the blur spreads along x and
-// along y as a Gaussian of that deviation in the node's coordinates spreads once the transform maps it to the image.
-// That is the whole mapped Gaussian unless the transform stretches unevenly along axes tilted from the image's, which
-// tilts the Gaussian; the blur then keeps its spread along each image axis but not the tilt.
+// A blur spreads the node's image, in premultiplied linear light, as a Gaussian does, along x and then along y. Its
+// standard deviation is in the node's own units, and the node's transform carries it into pixels: the blur spreads
+// along x and along y as a Gaussian of that deviation in the node's coordinates spreads once the transform maps it to
+// the image. That is the whole mapped Gaussian unless the transform stretches unevenly along axes tilted from the
+// image's, which tilts the Gaussian; the blur then keeps its spread along each image axis but not the tilt.
+//
+// Along an axis where the deviation is less than boxBlurDeviation pixels, the blur convolves with the Gaussian sampled
+// at whole pixels out to three standard deviations each way, rounded up to a whole pixel, and scaled to sum to 1. Cut
+// there, the kernel spreads up to about 1.3% less widely than the whole Gaussian would. From boxBlurDeviation up, three
+// box blurs stand in for it, as SVG's feGaussianBlur allows, in time that does not grow with the deviation. Each
+// averages a whole number of pixels and a fraction of the pixel beyond each end, sized so that the three spread with
+// exactly the deviation asked for (extended box filtering, after Gwosdek, Grewenig, Bruhn and Weickert, 2011), up to
+// about 170.5 pixels: there the boxes are the widest that stay within effectReach, and up to the cap of a third of it
+// they spread at most 0.1% less. They reach from two pixels less far than the kernel would to one pixel farther, and a
+// pixel's alpha differs from what the kernel would give it by at most 2.7 of 255 levels across a straight edge, and by
+// at most 10 levels, 3.9%, whatever the image. Either way every pixel read weighs a positive amount, and the image
+// keeps its total alpha.
 
 // How far, in pixels, a blur or a drop shadow reaches at most. A standard deviation counts at most a third of this, so
-// that its kernel reaches no farther, and content farther than this beyond the image neither blurs nor casts a shadow
-// into it. It bounds the memory and time an effect takes however far a transform scales it.
+// that its kernel or its boxes reach no farther, and content farther than this beyond the image neither blurs nor casts
+// a shadow into it. It bounds the memory and time an effect takes however far a transform scales it.
 inline constexpr int effectReach = 512;
+
+// The standard deviation, in pixels along an axis, from which a blur or a drop shadow spreads by box blurs rather than
+// by the sampled Gaussian: where the two take the same time. Below it the kernel is the faster, and it is exact.
+inline constexpr double boxBlurDeviation = 4.0;
 
 // A path that a node shows only inside, as SVG's clipPath element clips. The node's coverage at each pixel is
 // multiplied by the path's coverage there, so a clipped node covers the intersection of its shape and the path's;
