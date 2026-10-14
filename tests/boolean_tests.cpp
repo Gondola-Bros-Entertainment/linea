@@ -376,7 +376,8 @@ TEST_CASE("Each operation on two overlapping squares gives exactly the outline i
     CHECK(area(either) == 24.0);
 }
 
-TEST_CASE("Every operation covers the area that integrating both inputs' winding numbers gives") {
+TEST_CASE("Every operation covers the area that integrating both inputs' winding numbers gives" *
+          doctest::test_suite("slow")) {
     // Integer corners put many crossings, shared edges and shared corners exactly on top of one another.
     std::mt19937 rng(20240611);
     constexpr int trials = 120;
@@ -394,7 +395,8 @@ TEST_CASE("Every operation covers the area that integrating both inputs' winding
     }
 }
 
-TEST_CASE("Union and intersection add up to both shapes, and difference and exclusive or follow from them") {
+TEST_CASE("Union and intersection add up to both shapes, and difference and exclusive or follow from them" *
+          doctest::test_suite("slow")) {
     std::mt19937 rng(7);
     constexpr int trials = 120;
     constexpr std::uint32_t extent = 16;
@@ -416,7 +418,8 @@ TEST_CASE("Union and intersection add up to both shapes, and difference and excl
     }
 }
 
-TEST_CASE("Every point clear of both inputs' edges lies in the result exactly when the operation puts it there") {
+TEST_CASE("Every point clear of both inputs' edges lies in the result exactly when the operation puts it there" *
+          doctest::test_suite("slow")) {
     std::mt19937 rng(31337);
     constexpr int trials = 40;
     constexpr std::uint32_t extent = 16;
@@ -433,7 +436,8 @@ TEST_CASE("Every point clear of both inputs' edges lies in the result exactly wh
     }
 }
 
-TEST_CASE("Edges of the result meet only at the corners they share, and keep half a step from all others") {
+TEST_CASE("Edges of the result meet only at the corners they share, and keep half a step from all others" *
+          doctest::test_suite("slow")) {
     std::mt19937 rng(2718);
     constexpr int trials = 40;
     constexpr std::uint32_t extent = 16;
@@ -452,7 +456,8 @@ TEST_CASE("Edges of the result meet only at the corners they share, and keep hal
     }
 }
 
-TEST_CASE("Every corner of the result lies within half a step of a corner or crossing of the inputs") {
+TEST_CASE("Every corner of the result lies within half a step of a corner or crossing of the inputs" *
+          doctest::test_suite("slow")) {
     std::mt19937 rng(1618);
     constexpr int trials = 40;
     constexpr std::uint32_t extent = 16;
@@ -467,7 +472,8 @@ TEST_CASE("Every corner of the result lies within half a step of a corner or cro
     }
 }
 
-TEST_CASE("Polygons that share corners, overlap along edges and cross themselves fill as their winding numbers say") {
+TEST_CASE("Polygons that share corners, overlap along edges and cross themselves fill as their winding numbers say" *
+          doctest::test_suite("slow")) {
     // Corners drawn from a lattice six units wide repeat, line up and overlap often.
     std::mt19937 rng(4242);
     constexpr int trials = 150;
@@ -655,7 +661,8 @@ TEST_CASE("Outer contours wind clockwise and holes counterclockwise inside them"
     CHECK(twiceAreas == std::vector<double>{-72.0, 8.0, 200.0});
 }
 
-TEST_CASE("Results fill the same under either rule and match the inputs combined pixel by pixel") {
+TEST_CASE("Results fill the same under either rule and match the inputs combined pixel by pixel" *
+          doctest::test_suite("slow")) {
     // Pixel-aligned rectangles cover each pixel wholly or not at all, so coverage compares exactly.
     std::mt19937 rng(99);
     constexpr int trials = 40;

@@ -907,7 +907,7 @@ TEST_CASE("XML that is not well-formed, or that declares entities, is refused at
     refused("<svg xmlns:a=\"u\" xmlns:b=\"u\" a:x=\"1\" b:x=\"2\"/>", "the attribute b:x appears twice", 1, 38);
 }
 
-TEST_CASE("Nesting is bounded, counting use elements, and so is what use elements and references copy") {
+TEST_CASE("Nesting is bounded, counting the elements that use elements place") {
     std::string deep;
     for (int i = 0; i < deepestSvgNesting; ++i)
         deep += "<g>";
@@ -928,7 +928,13 @@ TEST_CASE("Nesting is bounded, counting use elements, and so is what use element
     for (int i = 1; i < deepestSvgNesting; ++i)
         chain += "<use id=\"u" + std::to_string(i) + "\" href=\"#u" + std::to_string(i - 1) + "\"/>";
     checkRefused(chain, "counting those that use elements place");
-    // Ten use elements of ten use elements of ... a path of a thousand points: a few kilobytes asking for terabytes.
+}
+
+// The document builds the whole bound's worth of drawing before it is refused, which takes over a minute under the
+// sanitizers.
+TEST_CASE("What use elements copy is bounded, so a few kilobytes cannot ask for terabytes" *
+          doctest::test_suite("slow")) {
+    // Ten use elements of ten use elements of ... a path of a thousand points.
     std::string laughs = "<defs><path id=\"l0\" d=\"M0 0";
     for (int i = 0; i < 1000; ++i)
         laughs += " 1 1";
@@ -1500,7 +1506,8 @@ void checkCorruptions(std::string_view clean) {
 
 } // namespace
 
-TEST_CASE("Every truncation and single-byte corruption of a document is read or refused, never misread") {
+TEST_CASE("Every truncation and single-byte corruption of a document is read or refused, never misread" *
+          doctest::test_suite("slow")) {
     SUBCASE("written by linea") { checkCorruptions(writtenFixture()); }
     SUBCASE("written by hand") { checkCorruptions(handFixture); }
 }

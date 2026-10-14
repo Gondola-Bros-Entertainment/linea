@@ -87,6 +87,10 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+The tests run as two CTest tests: `linea_fast_tests`, and `linea_slow_tests`, labeled `slow`, which holds the
+exhaustive sweeps and randomized stress cases and takes most of the time. `ctest -LE slow` runs the fast set alone; CI
+runs both.
+
 | Option | Default | Effect |
 | --- | --- | --- |
 | `LINEA_BUILD_TESTS` | On when linea is the top-level project | Builds the doctest suite in `tests/` |

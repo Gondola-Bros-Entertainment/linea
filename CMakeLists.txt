@@ -78,5 +78,11 @@ if(LINEA_BUILD_TESTS)
     target_compile_definitions(linea_tests
         PRIVATE LINEA_TEST_FONT="${CMAKE_CURRENT_SOURCE_DIR}/tests/fonts/LatoLatin-Regular.ttf")
     linea_warnings(linea_tests)
-    add_test(NAME linea_tests COMMAND linea_tests)
+    # The exhaustive sweeps and randomized stress cases form doctest's test suite "slow" and run as a test of their own,
+    # labeled slow, so that ctest -LE slow runs the rest alone. A filter that matches no test case fails rather than
+    # passing with nothing run.
+    add_test(NAME linea_fast_tests COMMAND linea_tests --test-suite-exclude=slow)
+    add_test(NAME linea_slow_tests COMMAND linea_tests --test-suite=slow)
+    set_tests_properties(linea_slow_tests PROPERTIES LABELS slow)
+    set_tests_properties(linea_fast_tests linea_slow_tests PROPERTIES FAIL_REGULAR_EXPRESSION "test cases: +0 \\|")
 endif()
