@@ -1,3 +1,5 @@
+#include "support.hpp"
+
 #include "linea/Drawing.hpp"
 #include "linea/Shapes.hpp"
 
@@ -14,15 +16,9 @@
 #include <vector>
 
 using namespace linea;
+using namespace linea::test;
 
 namespace {
-
-Color colorAt(const Image &image, int x, int y) {
-    const std::uint8_t *p =
-        image.rgba.data() +
-        (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x)) * 4;
-    return {p[0], p[1], p[2], p[3]};
-}
 
 // @p paint filling a drawing @p width by @p height units, rendered at a pixel a unit, so that pixel (x, y) shows the
 // paint at (x + 0.5, y + 0.5).

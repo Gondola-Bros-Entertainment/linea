@@ -1,3 +1,5 @@
+#include "support.hpp"
+
 #include "linea/Shapes.hpp"
 #include "linea/Svg.hpp"
 
@@ -22,6 +24,7 @@
 #include <vector>
 
 using namespace linea;
+using namespace linea::test;
 
 namespace {
 
@@ -1038,17 +1041,15 @@ constexpr int rampPixels = 1000;
 // The greatest difference, in 8-bit steps on any premultiplied channel or alpha, between what linea draws for a
 // horizontal @p paint over 0 to 1000 and what SVG draws for @p stops along the same line.
 double rampDifference(const Paint &paint, const std::vector<GradientStop> &stops) {
-    Layer layer;
-    layer.path = rectangle({0, 0}, {rampPixels, 1});
-    layer.fill = paint;
-    const Image image = render(Drawing{rampPixels, 1, {layer}}, rampPixels, 1);
+    const Image image =
+        render(Drawing{rampPixels, 1, {filled(rectangle({0, 0}, {rampPixels, 1}), paint)}}, rampPixels, 1);
     double worst = 0.0;
     for (int x = 0; x < rampPixels; ++x) {
         const std::array<double, 4> expected = svgRamp(stops, (x + 0.5) / rampPixels);
-        const std::uint8_t *pixel = image.rgba.data() + static_cast<std::size_t>(x) * 4;
-        const double alpha = pixel[3] / 255.0;
+        const std::uint8_t *rgba = pixel(image, x, 0);
+        const double alpha = rgba[3] / 255.0;
         for (std::size_t k = 0; k < 4; ++k) {
-            const double drawn = k == 3 ? alpha : pixel[k] / 255.0 * alpha;
+            const double drawn = k == 3 ? alpha : rgba[k] / 255.0 * alpha;
             worst = std::max(worst, std::abs(drawn - expected[k]) * 255.0);
         }
     }
@@ -1180,8 +1181,8 @@ TEST_CASE("color-interpolation linearRGB, which Chrome honors, reads as a gradie
         CHECK(read.stops == evenStops({red, {0, 255, 0, 255}}));
         // Halfway, each channel is half its light, which sRGB encodes as 188, as Chrome draws it.
         const Image image = render(drawing, 100, 1);
-        CHECK(image.rgba[49 * 4] == doctest::Approx(188).epsilon(0.02));
-        CHECK(image.rgba[49 * 4 + 1] == doctest::Approx(188).epsilon(0.02));
+        CHECK(pixel(image, 49, 0)[0] == doctest::Approx(188).epsilon(0.02));
+        CHECK(pixel(image, 49, 0)[1] == doctest::Approx(188).epsilon(0.02));
     }
     // Translucent neighbors that differ in color too take more stops, as in sRGB.
     const std::vector<GradientStop> written{{0.0, {255, 0, 0, 0}}, {1.0, {0, 0, 255, 255}}};
@@ -1340,8 +1341,8 @@ TEST_CASE("A radial gradient stretched into an ellipse fills as a layer in its o
     CHECK(stroked.stroke);
     // The ellipse's edge meets the box's sides: the middle of the left side is the last stop's blue.
     const Image image = render(drawing, 100, 100);
-    CHECK(image.rgba[(25 * 100 + 2) * 4 + 2] > 200);
-    CHECK(image.rgba[(25 * 100 + 50) * 4 + 0] > 200);
+    CHECK(pixel(image, 2, 25)[2] > 200);
+    CHECK(pixel(image, 50, 25)[0] > 200);
     checkRefused("<radialGradient id=\"g\"><stop/></radialGradient><rect width=\"100\" height=\"50\" "
                  "stroke=\"url(#g)\"/>",
                  "stretched unevenly");

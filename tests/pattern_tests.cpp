@@ -1,3 +1,5 @@
+#include "support.hpp"
+
 #include "linea/Drawing.hpp"
 #include "linea/Patterns.hpp"
 #include "linea/Shapes.hpp"
@@ -6,28 +8,14 @@
 
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
 
 using namespace linea;
+using namespace linea::test;
 
 namespace {
-
-Color colorAt(const Image &image, int x, int y) {
-    const std::uint8_t *p =
-        image.rgba.data() +
-        (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x)) * 4;
-    return {p[0], p[1], p[2], p[3]};
-}
-
-Layer filled(Path path, Paint paint) {
-    Layer layer;
-    layer.path = std::move(path);
-    layer.fill = std::move(paint);
-    return layer;
-}
 
 // @p paint filling a drawing @p units square, rendered @p zoom pixels a unit.
 Image painted(Paint paint, int units, int zoom = 1) {
@@ -39,10 +27,6 @@ Image painted(Paint paint, int units, int zoom = 1) {
 constexpr Color first{200, 30, 60, 255};
 constexpr Color second{20, 120, 220, 255};
 constexpr Color ink{30, 30, 30, 255};
-
-// A quarter turn clockwise, written out because rotate() leaves rounding where its zeros should be, and the test below
-// needs transforms whose products are exact.
-constexpr Affine quarterTurn{0.0, 1.0, -1.0, 0.0, 0.0, 0.0};
 
 // How many pixels of a checkerboard of squares @p size units on a side, rendered @p zoom pixels a unit, differ from
 // the color of the square their center falls in.
