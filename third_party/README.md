@@ -7,9 +7,10 @@ Builds do not download these vendored files.
 | [doctest 2.5.3](https://github.com/doctest/doctest/tree/2d0a9359a60c51affe2a9bebb1be1dca47868151) | `2d0a9359a60c51affe2a9bebb1be1dca47868151` (`v2.5.3` tag) | `doctest/doctest/doctest.h`, `doctest/LICENSE.txt` (MIT); test runner only, never linked into the linea library |
 | [Lato 2.015](https://github.com/mikke89/RmlUi/tree/ba95ffe8bfb6370efb2cdcca927eaad4710c5413/Samples/assets), LatoLatin Regular | RmlUi's `ba95ffe8bfb6370efb2cdcca927eaad4710c5413` (`6.3` tag) | `../tests/fonts/LatoLatin-Regular.ttf`, `../tests/fonts/OFL.txt` (SIL Open Font License 1.1); test font only, never linked into the linea library |
 
-The doctest files are unmodified copies of the ones Anima vendors. The font is an unmodified copy of RmlUi's
-`Samples/assets/LatoLatin-Regular.ttf`, and `OFL.txt` is the Lato section of that directory's `LICENSE.txt`, its lines
-4 to 109: Lato's copyright notice and the license. Their SHA-256 checksums, from this directory:
+The doctest files are unmodified copies of doctest's `doctest/doctest.h` and `LICENSE.txt` at that revision. The font
+is an unmodified copy of RmlUi's `Samples/assets/LatoLatin-Regular.ttf`, and `OFL.txt` is the Lato section of that
+directory's `LICENSE.txt`, its lines 4 to 109: Lato's copyright notice and the license. Their SHA-256 checksums, from
+this directory:
 
 ```text
 cfd518a3ef90f67e1f3ba514df23fb3627437de1a2feeba78cf5062a40021421  doctest/doctest/doctest.h
