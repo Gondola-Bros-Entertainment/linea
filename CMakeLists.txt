@@ -24,8 +24,8 @@ function(linea_warnings target)
 endfunction()
 
 # Vector graphics: paths, shapes, strokes, paints and an anti-aliased rasterizer, with no dependencies beyond the
-# standard library.
-add_library(linea
+# standard library. Static, because no symbol is marked for export, so an MSVC DLL of it would export nothing.
+add_library(linea STATIC
     src/Boolean.cpp
     src/Color.cpp
     src/Drawing.cpp

@@ -90,6 +90,9 @@ target_link_libraries(my_game PRIVATE linea::linea)
 
 `add_subdirectory` on a checkout works the same way.
 
+linea always builds as a static library, even with `BUILD_SHARED_LIBS` on, so a project that links it into a shared
+library turns `CMAKE_POSITION_INDEPENDENT_CODE` on before adding it.
+
 ## Build and test
 
 Requires CMake 3.21 or newer and a C++20 compiler. CI builds and tests with GCC and Clang on Linux, MSVC on Windows and
