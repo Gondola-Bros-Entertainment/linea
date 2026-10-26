@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(linea VERSION 0.1.0 LANGUAGES CXX)
 
-# Tests build only when linea is the top-level project, never inside a project that adds it.
+# Tests and warnings-as-errors default to on only when linea is the top-level project, so that a project adding linea
+# neither builds its tests nor fails on a warning a newer compiler finds in it.
 option(LINEA_BUILD_TESTS "Build linea's tests" ${PROJECT_IS_TOP_LEVEL})
-option(LINEA_WARNINGS_AS_ERRORS "Fail the build on compiler warnings" ON)
+option(LINEA_WARNINGS_AS_ERRORS "Fail the build on compiler warnings" ${PROJECT_IS_TOP_LEVEL})
 
 function(linea_warnings target)
     if(MSVC)

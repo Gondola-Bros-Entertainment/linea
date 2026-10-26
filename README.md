@@ -109,7 +109,7 @@ runs both.
 | Option | Default | Effect |
 | --- | --- | --- |
 | `LINEA_BUILD_TESTS` | On when linea is the top-level project | Builds the doctest suite in `tests/` |
-| `LINEA_WARNINGS_AS_ERRORS` | On | Fails the build on any compiler warning |
+| `LINEA_WARNINGS_AS_ERRORS` | On when linea is the top-level project | Fails the build on any compiler warning |
 
 Formatting follows `.clang-format` (clang-format 22).
 
