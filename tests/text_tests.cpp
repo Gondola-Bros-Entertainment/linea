@@ -67,11 +67,7 @@ void checkSamePath(const Path &actual, const Path &expected) {
     }
 }
 
-int alphaAt(const Image &image, int x, int y) {
-    const std::size_t pixel =
-        static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x);
-    return image.rgba[pixel * 4 + 3];
-}
+int alphaAt(const Image &image, int x, int y) { return pixel(image, x, y)[3]; }
 
 // Fonts built in memory, with the glyphs a test needs, and small enough to corrupt byte by byte.
 
