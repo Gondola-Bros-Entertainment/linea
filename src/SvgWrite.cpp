@@ -214,7 +214,7 @@ class Writer {
         if (std::holds_alternative<ConicGradient>(value))
             throw SvgError("a conic gradient cannot be written: SVG has none");
         if (std::holds_alternative<Pattern>(value))
-            throw SvgError("a pattern paint is not written to SVG yet");
+            throw SvgError("a pattern paint is not written to SVG");
         attribute(element, name, "url(#" + gradientId(value) + ")");
     }
 
