@@ -6,7 +6,7 @@ dependencies beyond the standard library.
 
 An `Image` is plain data, `{ int width, height; std::vector<std::uint8_t> rgba }`: RGBA, row-major, origin at the top
 left, sRGB-encoded with straight alpha, as PNG files store it. It uploads straight to SDL (`SDL_PIXELFORMAT_RGBA32`)
-or any other backend. Everything is a free function over plain structs.
+or any other backend.
 
 ## Example
 
@@ -62,22 +62,20 @@ void save(const linea::Image &image, const char *path) {
 | `Indirect.hpp` | A value held in storage of its own that copies and compares as the value itself, as C++26's `std::indirect`, so that a group can hold nodes that hold groups |
 | `Drawing.hpp` | Layers of filled and stroked paths and groups of them, each with its own transform, opacity, clip path, Gaussian blur and drop shadow, groups with alpha or luminance masks, composited in linear light |
 | `Patterns.hpp` | Dot grids, line grids, crosshatching and checkerboards as ready-made patterns |
-| `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and kerning |
+| `Text.hpp` | TrueType fonts read with no dependency, and lines of text as paths with the font's advances and `kern` table kerning |
 | `Png.hpp` | Images as PNG files, compressed losslessly, with no dependency |
-| `Svg.hpp` | Drawings written as SVG documents that read back exactly, and SVG documents read as drawings, refusing what linea cannot draw as a browser would; SVG path data both ways |
+| `Svg.hpp` | Drawings without clips, masks, blurs, drop shadows, patterns or conic gradients written as SVG documents that read back exactly, and SVG documents read as drawings, refusing what linea cannot draw as a browser would; SVG path data both ways |
 
-Coverage is the exact area of each pixel that a shape covers, so edges are smooth at every size without
-supersampling. Gradients blend in Oklab by default, a perceptual color space, so a gradient between two saturated
-colors does not pass through grey; they can blend in sRGB as SVG and CSS do by default, or in linear light. Color
-adjustments work in Oklab too, so lightening any color by 0.1 raises its perceived lightness by the same step. Layers
-composite in linear light, as light adds up. A group composites its children as one image, and a layer its fill and
-stroke, as SVG's opacity does, so a translucent group or layer fades as a whole without its parts showing through
-each other. Clips, masks, blurs and drop shadows apply to that same image, in the order SVG and CSS apply them, and a
-blur works in premultiplied linear light, keeping the image's total alpha. A pattern draws its tile once at the
-resolution it has on the image and repeats it, so it stays sharp at any size and moves with its layer as a gradient
-does. Noise is a pure function of a point and a seed, so a seed always draws the same shapes, on every platform alike
-to within rounding. SVG documents are read with an XML reader of linea's own that refuses entity declarations and bounds
-nesting and what use elements may copy, so a document from anywhere is safe to read.
+Gradients blend in Oklab by default; set a gradient's `interpolation` to `Interpolation::srgb` to blend as SVG and CSS
+do. A group composites its children as one image, and a layer its fill and stroke, as SVG's opacity does. Noise is a
+pure function of a point and a seed, the same on every platform to within rounding. The SVG reader refuses entity
+declarations and bounds nesting and what `use` elements may copy, so a document from anywhere is safe to read.
+
+## Requirements
+
+linea needs CMake 3.21 or newer and a C++20 compiler. On Apple platforms, the deployment target must be macOS 13.3, iOS
+16.3, tvOS 16.3 or watchOS 9.3 or later, the first whose libc++ has floating-point `std::to_chars`. CI builds and tests
+with GCC and Clang on Linux, MSVC on Windows and Apple Clang on macOS.
 
 ## Use it from CMake
 
@@ -98,14 +96,17 @@ library turns `CMAKE_POSITION_INDEPENDENT_CODE` on before adding it.
 
 ## Build and test
 
-Requires CMake 3.21 or newer and a C++20 compiler. CI builds and tests with GCC and Clang on Linux, MSVC on Windows and
-Apple Clang on macOS, and runs the tests under AddressSanitizer and UndefinedBehaviorSanitizer. On macOS, the deployment
-target must be 13.3 or later, the first whose libc++ has the floating-point `std::to_chars` that writing SVG uses.
-
 ```sh
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+With CMake 3.25 or newer and Ninja, the `debug`, `release` and `sanitizers` workflow presets each configure, build and
+test in one step. `sanitizers` builds with AddressSanitizer and UndefinedBehaviorSanitizer, which needs GCC or Clang:
+
+```sh
+cmake --workflow --preset sanitizers
 ```
 
 The tests run as two CTest tests: `linea_fast_tests`, and `linea_slow_tests`, labeled `slow`, which holds the
