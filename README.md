@@ -81,9 +81,12 @@ nesting and what use elements may copy, so a document from anywhere is safe to r
 
 ## Use it from CMake
 
+linea has no tagged releases, so pin a commit of `main`: every configure then builds the same linea, without fetching
+to check for changes.
+
 ```cmake
 include(FetchContent)
-FetchContent_Declare(linea GIT_REPOSITORY https://github.com/Gondola-Bros-Entertainment/linea.git GIT_TAG main)
+FetchContent_Declare(linea GIT_REPOSITORY https://github.com/Gondola-Bros-Entertainment/linea.git GIT_TAG <commit>)
 FetchContent_MakeAvailable(linea)
 target_link_libraries(my_game PRIVATE linea::linea)
 ```
